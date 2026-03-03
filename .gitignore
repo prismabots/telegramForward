@@ -1,0 +1,20 @@
+# Sensitive config - never commit real credentials
+config.json
+
+# Telethon session files
+*.session
+*.session-journal
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db

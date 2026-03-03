@@ -1,0 +1,17 @@
+{
+  "telegram": {
+    "api_id": "YOUR_API_ID",
+    "api_hash": "YOUR_API_HASH",
+    "session_name": "anon"
+  },
+  "channels": [
+    {
+      "name": "My Channel",
+      "chat_id": "channel_username",
+      "discord_webhook": "https://discord.com/api/webhooks/...",
+      "enabled": true
+    }
+  ],
+  "bot_username": "Telegram Forward Bot",
+  "log_level": "INFO"
+}
