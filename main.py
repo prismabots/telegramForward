@@ -56,6 +56,28 @@ api_id = int(api_id_str)
 # Bot display name for Discord
 bot_username = settings.get("bot_username", "Telegram Forward Bot")
 
+
+# ---------------------------------------------------------------------------
+# Webhook URL resolver (handles short URLs / redirects)
+# ---------------------------------------------------------------------------
+
+def resolve_webhook_url(url: str) -> str:
+    """
+    Follow any redirects (e.g. short.io links) and return the final URL.
+    This ensures we always POST directly to the real Discord webhook endpoint,
+    since requests.post() does not re-POST after a 301/302 redirect.
+    """
+    try:
+        resp = requests.head(url, allow_redirects=True, timeout=10)
+        final = resp.url
+        if final != url:
+            logger.info(f"Webhook URL resolved: {url} → {final}")
+        return final
+    except Exception as e:
+        logger.warning(f"Could not resolve webhook URL '{url}', using as-is: {e}")
+        return url
+
+
 # ---------------------------------------------------------------------------
 # Load channels from DB
 # ---------------------------------------------------------------------------
@@ -74,7 +96,7 @@ if not db_channels:
 channel_configs: dict[str, dict] = {}
 for ch in db_channels:
     channel_configs[ch["chat_id"]] = {
-        "webhook": ch["discord_webhook"],
+        "webhook": resolve_webhook_url(ch["discord_webhook"]),
         "name":    ch["name"],
         "db_id":   ch["id"],
         "role_id": ch.get("discord_role_id"),
