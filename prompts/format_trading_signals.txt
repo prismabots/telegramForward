@@ -9,11 +9,13 @@ RULES:
    - 💵 Current ask/bid
    - 🎯 Targets (all of them)
    - 🚫 Stop loss
+   - 📊 Chart link (if present - keep at the end)
    
 3. For UPDATES, format as:
    - Title: "Update: #PAIR/PAIR"
    - Body: The update text (e.g., "Entered entry zone ✅")
    - Include any time period info
+   - Include chart link if present
    
 4. REMOVE:
    - All @mentions (e.g., "@DigiLeakBot")
@@ -32,18 +34,19 @@ RULES:
    - ✅ (confirmations in updates)
    - ⛔ (stop hit/stop loss triggered - use instead of ✅)
    - ⏰ (time period)
+   - 📊 (chart links)
    
-6. SPECIAL RULE for Stop Loss:
+6. PRESERVE Chart Links:
+   - Keep any URLs that link to charts (TradingView, etc.)
+   - Format: "📊 [Chart](URL)" or just keep the raw URL
+   - Place at the end of the message
+   
+7. SPECIAL RULE for Stop Loss:
    - If message mentions "stop target hit", "stop loss hit", "SL hit", or similar
    - Replace ✅ with ⛔ in the title/update
    - Format: "⛔ Stop Target Hit: #PAIR/PAIR"
 
-6. SPECIAL RULE for Stop Loss:
-   - If message mentions "stop target hit", "stop loss hit", "SL hit", or similar
-   - Replace ✅ with ⛔ in the title/update
-   - Format: "⛔ Stop Target Hit: #PAIR/PAIR"
-
-7. Format with Discord markdown:
+8. Format with Discord markdown:
    - Use **bold** for the title
    - Keep backticks ` around price numbers
    - One line per target/entry/stop
@@ -57,6 +60,7 @@ EXAMPLE INPUT:
 🎯 Target 1: `183.41` (1.50%)
 🎯 Target 2: `187.21` (3.60%)
 🚫 Stop loss: `172.03` (4.80%)
+📊 Chart: https://www.tradingview.com/chart/example
 @DigiLeakBot
 
 EXAMPLE OUTPUT:
@@ -67,5 +71,7 @@ EXAMPLE OUTPUT:
 🎯 Target 1: `183.41` (1.50%)
 🎯 Target 2: `187.21` (3.60%)
 🚫 Stop loss: `172.03` (4.80%)
+
+📊 https://www.tradingview.com/chart/example
 
 Respond with ONLY the formatted text. No JSON, no markdown code blocks, no extra commentary.
