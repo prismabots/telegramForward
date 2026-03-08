@@ -138,21 +138,26 @@ async def _query_sonar(session: aiohttp.ClientSession, prompt: str, system: str,
 
 
 async def _query_glm(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
-    """Zhipu AI GLM (ChatGLM) — OpenAI-compatible endpoint."""
-    url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user",   "content": prompt},
-        ],
-        "temperature": 0.1,
-    }
-    async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        if resp.status == 200:
-            return (await resp.json())["choices"][0]["message"]["content"]
-        raise Exception(f"GLM error {resp.status}: {await resp.text()}")
+    """Zhipu AI GLM via the official zai-sdk (async, overseas endpoint)."""
+    from zai import ZaiClient
+    import asyncio
+
+    client = ZaiClient(api_key=api_key)
+
+    # zai-sdk is synchronous — run in a thread pool to avoid blocking the event loop
+    def _sync_call():
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": prompt},
+            ],
+            temperature=0.1,
+        )
+        return resp.choices[0].message.content
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_call)
 
 
 # ---------------------------------------------------------------------------
