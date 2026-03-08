@@ -12,6 +12,7 @@ import logging
 import datetime
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +32,39 @@ class _TelegramEncoder(json.JSONEncoder):
             return str(obj)
 
 # ---------------------------------------------------------------------------
-# Connection
+# Connection pool
 # ---------------------------------------------------------------------------
 
+_pool: pool.SimpleConnectionPool | None = None
+
+
+def _get_pool() -> pool.SimpleConnectionPool:
+    """Return the global connection pool, creating it on first call."""
+    global _pool
+    if _pool is None or _pool.closed:
+        url = os.environ.get("BACKUP_DB_ADMIN_URL")
+        if not url:
+            raise RuntimeError("BACKUP_DB_ADMIN_URL environment variable is not set.")
+        _pool = pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=5,   # keep well within DigitalOcean's connection limit
+            dsn=url,
+        )
+        logger.info("Database connection pool created (min=1, max=5).")
+    return _pool
+
+
 def get_connection():
-    """Return a new psycopg2 connection using BACKUP_DB_ADMIN_URL."""
-    url = os.environ.get("BACKUP_DB_ADMIN_URL")
-    if not url:
-        raise RuntimeError("BACKUP_DB_ADMIN_URL environment variable is not set.")
-    return psycopg2.connect(url)
+    """Borrow a connection from the pool."""
+    return _get_pool().getconn()
+
+
+def release_connection(conn):
+    """Return a connection to the pool."""
+    try:
+        _get_pool().putconn(conn)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +147,6 @@ def init_db():
         with conn:
             with conn.cursor() as cur:
                 cur.execute(_DDL)
-                # Seed defaults (won't overwrite existing rows)
                 for key, value in _DEFAULT_SETTINGS.items():
                     cur.execute(
                         "INSERT INTO tele_settings (key, value) VALUES (%s, %s) "
@@ -131,7 +155,7 @@ def init_db():
                     )
         logger.info("Database initialised successfully.")
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +171,7 @@ def get_setting(key: str, default=None) -> str | None:
             row = cur.fetchone()
             return row[0] if row else default
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def set_setting(key: str, value: str) -> None:
@@ -162,7 +186,7 @@ def set_setting(key: str, value: str) -> None:
                     (key, value),
                 )
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_all_settings() -> dict:
@@ -173,7 +197,7 @@ def get_all_settings() -> dict:
             cur.execute("SELECT key, value FROM tele_settings")
             return {row[0]: row[1] for row in cur.fetchall()}
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +217,7 @@ def get_channels(enabled_only: bool = True) -> list[dict]:
                 cur.execute("SELECT * FROM tele_channels ORDER BY id")
             return [dict(row) for row in cur.fetchall()]
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def add_channel(
@@ -217,13 +241,13 @@ def add_channel(
                 )
                 return dict(cur.fetchone())
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def update_channel(channel_id: int, **kwargs) -> dict | None:
     """
     Update one or more columns on a channel row.
-    Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id
+    Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id
     """
     allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
@@ -244,7 +268,7 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
                 row = cur.fetchone()
                 return dict(row) if row else None
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def delete_channel(channel_id: int) -> bool:
@@ -258,7 +282,7 @@ def delete_channel(channel_id: int) -> bool:
                 )
                 return cur.rowcount > 0
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +348,7 @@ def save_message(
                     ),
                 )
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_discord_msg_id(channel_id: int, telegram_message_id: int) -> str | None:
@@ -348,4 +372,4 @@ def get_discord_msg_id(channel_id: int, telegram_message_id: int) -> str | None:
             row = cur.fetchone()
             return row[0] if row else None
     finally:
-        conn.close()
+        release_connection(conn)
