@@ -153,19 +153,27 @@ if not db_channels:
 # channel_configs: chat_id (username) -> {webhook, name, db_id}
 # Populated from DB; used during resolve phase.
 channel_configs: dict[str, dict] = {}
+logger.info(f"Loading {len(db_channels)} channels from database...")
 for ch in db_channels:
     webhook_url = ch["discord_webhook"]
+    channel_name = ch["name"]
+    
+    logger.info(f"Fetching Discord IDs for '{channel_name}'...")
     discord_channel_id = fetch_discord_channel_id(webhook_url)
     discord_guild_id = fetch_discord_guild_id(webhook_url)
     
+    if not discord_channel_id:
+        logger.error(f"❌ Failed to fetch discord_channel_id for '{channel_name}'")
+    if not discord_guild_id:
+        logger.error(f"❌ Failed to fetch discord_guild_id for '{channel_name}'")
+    
     logger.info(
-        f"Channel '{ch['name']}': discord_channel_id={discord_channel_id}, "
-        f"discord_guild_id={discord_guild_id}"
+        f"✓ '{channel_name}': channel_id={discord_channel_id}, guild_id={discord_guild_id}"
     )
     
     channel_configs[ch["chat_id"]] = {
         "webhook":            webhook_url,
-        "name":               ch["name"],
+        "name":               channel_name,
         "db_id":              ch["id"],
         "role_id":            ch.get("discord_role_id"),
         "discord_channel_id": discord_channel_id,
@@ -174,7 +182,6 @@ for ch in db_channels:
         "ai_triage_prompt":   ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
         "ai_format_prompt":   ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
     }
-    logger.info(f"Loaded channel from DB: {ch['name']} ({ch['chat_id']})")
 
 # channel_webhook_map: numeric Telegram channel ID -> {webhook, name, db_id}
 # Populated after Telethon resolves entities.
@@ -353,6 +360,7 @@ async def resolve_channels():
                 "db_id":              cfg["db_id"],
                 "role_id":            cfg["role_id"],
                 "discord_channel_id": cfg["discord_channel_id"],
+                "discord_guild_id":   cfg["discord_guild_id"],
                 "ai_enabled":         cfg["ai_enabled"],
                 "ai_triage_prompt":   cfg["ai_triage_prompt"],
                 "ai_format_prompt":   cfg["ai_format_prompt"],
