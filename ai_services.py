@@ -72,13 +72,17 @@ Respond with the formatted message text only. No JSON, no commentary.
 async def _query_openai(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    
+    # gpt-5-nano only supports temperature=1.0
+    temperature = 1.0 if "gpt-5" in model.lower() or "nano" in model.lower() else 0.1
+    
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user",   "content": prompt},
         ],
-        "temperature": 0.1,
+        "temperature": temperature,
     }
     async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
         if resp.status == 200:
