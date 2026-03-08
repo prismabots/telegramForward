@@ -155,13 +155,21 @@ if not db_channels:
 channel_configs: dict[str, dict] = {}
 for ch in db_channels:
     webhook_url = ch["discord_webhook"]
+    discord_channel_id = fetch_discord_channel_id(webhook_url)
+    discord_guild_id = fetch_discord_guild_id(webhook_url)
+    
+    logger.info(
+        f"Channel '{ch['name']}': discord_channel_id={discord_channel_id}, "
+        f"discord_guild_id={discord_guild_id}"
+    )
+    
     channel_configs[ch["chat_id"]] = {
         "webhook":            webhook_url,
         "name":               ch["name"],
         "db_id":              ch["id"],
         "role_id":            ch.get("discord_role_id"),
-        "discord_channel_id": fetch_discord_channel_id(webhook_url),
-        "discord_guild_id":   fetch_discord_guild_id(webhook_url),
+        "discord_channel_id": discord_channel_id,
+        "discord_guild_id":   discord_guild_id,
         "ai_enabled":         ch.get("ai_enabled", False),
         "ai_triage_prompt":   ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
         "ai_format_prompt":   ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
@@ -247,7 +255,7 @@ async def send_to_discord(
     elif reply_to_discord_id and (not discord_channel_id or not discord_guild_id):
         logger.warning(
             f"Cannot create reply link to Discord message {reply_to_discord_id}: "
-            f"discord_channel_id or discord_guild_id not available."
+            f"discord_channel_id={discord_channel_id!r}, discord_guild_id={discord_guild_id!r}"
         )
 
     try:
