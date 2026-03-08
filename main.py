@@ -1,5 +1,6 @@
 from telethon import TelegramClient, events
 from telethon.tl.functions.messages import CheckChatInviteRequest
+from telethon.tl.types import MessageMediaWebPage, WebPage
 import requests
 import logging
 from datetime import datetime
@@ -366,9 +367,18 @@ async def handle_new_message(event):
         discord_channel_id  = cfg.get("discord_channel_id")
 
         msg          = event.message
-        message_text = msg.text or ""
+        message_text = msg.text or msg.message or ""
         tg_msg_id    = msg.id
         tg_reply_to  = getattr(msg.reply_to, "reply_to_msg_id", None) if msg.reply_to else None
+
+        # If the message has no text but has a WebPage media (link preview),
+        # extract the URL so we don't silently drop link-only messages.
+        if not message_text and msg.media:
+            try:
+                if isinstance(msg.media, MessageMediaWebPage) and isinstance(msg.media.webpage, WebPage):
+                    message_text = msg.media.webpage.url or ""
+            except Exception:
+                pass
 
         # Sender info
         sender = await event.get_sender()
