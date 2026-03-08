@@ -408,6 +408,11 @@ async def handle_new_message(event):
         ai_triage_prompt    = cfg.get("ai_triage_prompt", DEFAULT_TRIAGE_PROMPT)
         ai_format_prompt    = cfg.get("ai_format_prompt", DEFAULT_FORMAT_PROMPT)
 
+        if not discord_channel_id:
+            logger.warning(
+                f"[{channel_name}] discord_channel_id not available — reply threading will not work"
+            )
+
         msg          = event.message
         message_text = msg.text or msg.message or ""
         tg_msg_id    = msg.id
@@ -445,10 +450,18 @@ async def handle_new_message(event):
         # Reply threading — look up corresponding Discord message
         reply_to_discord_id = None
         if tg_reply_to is not None:
+            logger.info(
+                f"[{channel_name}] Message {tg_msg_id} is a reply to Telegram message {tg_reply_to}"
+            )
             reply_to_discord_id = db.get_discord_msg_id(db_channel_id, tg_reply_to)
             if reply_to_discord_id:
                 logger.info(
-                    f"Threading: TG {tg_reply_to} → Discord {reply_to_discord_id}"
+                    f"[{channel_name}] Threading: TG {tg_reply_to} → Discord {reply_to_discord_id}"
+                )
+            else:
+                logger.warning(
+                    f"[{channel_name}] Reply target TG message {tg_reply_to} not found in DB "
+                    f"(may pre-date bot or failed to send)"
                 )
 
         # Raw message for archive (serialise safely)
