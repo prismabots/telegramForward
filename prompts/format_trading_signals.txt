@@ -15,7 +15,7 @@ RULES:
    - Title: "Update: #PAIR/PAIR"
    - Body: The update text (e.g., "Entered entry zone ✅")
    - Include any time period info
-   - Include chart link if present
+   - **IMPORTANT**: Always include chart links if present - these are critical for updates!
    
 4. REMOVE:
    - All @mentions (e.g., "@DigiLeakBot")
@@ -36,10 +36,11 @@ RULES:
    - ⏰ (time period)
    - 📊 (chart links)
    
-6. PRESERVE Chart Links:
-   - Keep any URLs that link to charts (TradingView, etc.)
+6. PRESERVE Chart Links (CRITICAL FOR UPDATES):
+   - **ALWAYS keep any URLs** that link to charts (TradingView, Binance, etc.)
    - Format: "📊 [Chart](URL)" or just keep the raw URL
    - Place at the end of the message
+   - Updates often contain chart analysis - these links are essential!
    
 7. SPECIAL RULE for Stop Loss:
    - If message mentions "stop target hit", "stop loss hit", "SL hit", or similar
@@ -73,5 +74,18 @@ EXAMPLE OUTPUT:
 🚫 Stop loss: `172.03` (4.80%)
 
 📊 https://www.tradingview.com/chart/example
+
+EXAMPLE UPDATE INPUT:
+✅ #BTC/USDT reached entry zone!
+Setting up new targets based on momentum.
+📊 https://www.tradingview.com/chart/BTCUSDT-analysis
+
+EXAMPLE UPDATE OUTPUT:
+**Update: #BTC/USDT**
+
+Reached entry zone! ✅
+Setting up new targets based on momentum.
+
+📊 https://www.tradingview.com/chart/BTCUSDT-analysis
 
 Respond with ONLY the formatted text. No JSON, no markdown code blocks, no extra commentary.
