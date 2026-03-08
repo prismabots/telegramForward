@@ -9,10 +9,26 @@ else (Telegram credentials, bot settings, channel rules) lives in the database.
 import os
 import json
 import logging
+import datetime
 import psycopg2
 import psycopg2.extras
 
 logger = logging.getLogger(__name__)
+
+
+class _TelegramEncoder(json.JSONEncoder):
+    """JSON encoder that handles types returned by Telethon's to_dict()."""
+
+    def default(self, obj):
+        if isinstance(obj, (datetime.datetime, datetime.date)):
+            return obj.isoformat()
+        if isinstance(obj, bytes):
+            return obj.hex()
+        # Fallback: convert to string rather than crashing
+        try:
+            return super().default(obj)
+        except TypeError:
+            return str(obj)
 
 # ---------------------------------------------------------------------------
 # Connection
@@ -286,7 +302,7 @@ def save_message(
                         message_text,
                         media_type,
                         media_file_name,
-                        json.dumps(raw_message) if raw_message else None,
+                        json.dumps(raw_message, cls=_TelegramEncoder) if raw_message else None,
                         discord_message_id,
                         discord_message_text,
                         discord_username,
