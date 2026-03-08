@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS tele_messages (
 
     -- Discord side
     discord_message_id   TEXT,
-    discord_message_text TEXT,
+    formatted_message    TEXT,
     discord_username     TEXT,
     discord_webhook      TEXT        NOT NULL,
     send_status          TEXT        NOT NULL DEFAULT 'sent',
@@ -178,6 +178,28 @@ CREATE INDEX IF NOT EXISTS idx_tele_messages_channel_tg
 
 CREATE INDEX IF NOT EXISTS idx_tele_messages_reply_to
     ON tele_messages (channel_id, telegram_reply_to);
+
+-- Idempotent: rename discord_message_text -> formatted_message if old column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_messages' AND column_name = 'discord_message_text'
+    ) THEN
+        ALTER TABLE tele_messages RENAME COLUMN discord_message_text TO formatted_message;
+    END IF;
+END $$;
+
+-- Idempotent: add formatted_message if this is a fresh DB that missed it
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_messages' AND column_name = 'formatted_message'
+    ) THEN
+        ALTER TABLE tele_messages ADD COLUMN formatted_message TEXT;
+    END IF;
+END $$;
 """
 
 _DEFAULT_SETTINGS = {
@@ -348,7 +370,7 @@ def save_message(
     media_file_name: str | None,
     raw_message: dict | None,
     discord_message_id: str | None,
-    discord_message_text: str | None,
+    formatted_message: str | None,
     discord_username: str | None,
     discord_webhook: str,
     send_status: str = "sent",
@@ -365,7 +387,7 @@ def save_message(
                         channel_id, telegram_message_id, telegram_reply_to,
                         sender_id, sender_name,
                         message_text, media_type, media_file_name, raw_message,
-                        discord_message_id, discord_message_text, discord_username,
+                        discord_message_id, formatted_message, discord_username,
                         discord_webhook, send_status, error_detail
                     ) VALUES (
                         %s, %s, %s,
@@ -387,7 +409,7 @@ def save_message(
                         media_file_name,
                         json.dumps(raw_message, cls=_TelegramEncoder) if raw_message else None,
                         discord_message_id,
-                        discord_message_text,
+                        formatted_message,
                         discord_username,
                         discord_webhook,
                         send_status,

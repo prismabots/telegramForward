@@ -479,23 +479,6 @@ async def handle_new_message(event):
 
         if triage_action == "discard":
             logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
-            db.save_message(
-                channel_id           = db_channel_id,
-                telegram_message_id  = tg_msg_id,
-                telegram_reply_to    = tg_reply_to,
-                sender_id            = sender_id,
-                sender_name          = sender_name,
-                message_text         = message_text or None,
-                media_type           = media_type,
-                media_file_name      = media_file_name,
-                raw_message          = raw_message,
-                discord_message_id   = None,
-                discord_message_text = None,
-                discord_username     = bot_username,
-                discord_webhook      = webhook_url,
-                send_status          = "discarded",
-                error_detail         = triage_reason,
-            )
             return
 
         # Send to Discord
@@ -521,7 +504,7 @@ async def handle_new_message(event):
             media_file_name      = media_file_name,
             raw_message          = raw_message,
             discord_message_id   = discord_message_id,
-            discord_message_text = discord_text_sent,
+            formatted_message    = discord_text_sent,
             discord_username     = bot_username,
             discord_webhook      = webhook_url,
             send_status          = send_status,
