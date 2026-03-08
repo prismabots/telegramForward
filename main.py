@@ -8,6 +8,7 @@ import os
 import tempfile
 import mimetypes
 import json
+import discord_embeds
 import sys
 
 # Ensure db module is importable from the same directory
@@ -248,26 +249,13 @@ async def send_to_discord(
     Returns:
         (discord_message_id, actual_text_sent) or (None, None) on failure.
     """
-    # Prepend role mention if configured
-    role_mention = f"<@&{role_id}>\n" if role_id else ""
-
     # Append ?wait=true to get response body with message id
     url = webhook_url.rstrip("/") + ("&" if "?" in webhook_url else "?") + "wait=true"
 
-    # Build message link for replies
-    # NOTE: Discord webhooks cannot create threaded replies like bot messages can.
-    # Instead, we'll prepend a message link to provide context.
-    reply_prefix = ""
+    # Build reply link if applicable
+    reply_link = None
     if reply_to_discord_id and discord_channel_id and discord_guild_id:
-        # Format: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
-        reply_link = f"↩️ [Reply to message](https://discord.com/channels/{discord_guild_id}/{discord_channel_id}/{reply_to_discord_id})"
-        
-        # Include quoted text if available (truncate to 200 chars to avoid spam)
-        if quoted_text:
-            quoted_preview = quoted_text[:200] + "..." if len(quoted_text) > 200 else quoted_text
-            reply_prefix = f"{reply_link}\n> {quoted_preview}\n\n"
-        else:
-            reply_prefix = f"{reply_link}\n\n"
+        reply_link = f"https://discord.com/channels/{discord_guild_id}/{discord_channel_id}/{reply_to_discord_id}"
     elif reply_to_discord_id and (not discord_channel_id or not discord_guild_id):
         logger.warning(
             f"Cannot create reply link to Discord message {reply_to_discord_id}: "
@@ -276,6 +264,7 @@ async def send_to_discord(
 
     try:
         if media_path:
+            # Media with embed
             mime_type, _ = mimetypes.guess_type(media_path)
             ext = get_file_extension(media_path)
 
@@ -292,8 +281,19 @@ async def send_to_discord(
                 content_type = mime_type or "application/octet-stream"
                 fallback_text = "File from Telegram"
 
-            text = role_mention + reply_prefix + (message_text if message_text else fallback_text)
-            payload: dict = {"content": text, "username": bot_username, "flags": 4}
+            # Build embed for media message
+            text_to_send = message_text if message_text else fallback_text
+            payload = discord_embeds.create_webhook_payload(
+                message_text=text_to_send,
+                role_id=role_id,
+                quoted_text=quoted_text,
+                username=bot_username,
+                use_embed=True,
+            )
+            
+            # Add reply link to embed if available
+            if reply_link and payload.get('embeds'):
+                payload['embeds'][0]['description'] = f"↩️ [Reply to message]({reply_link})\n\n" + payload['embeds'][0].get('description', '')
 
             with open(media_path, "rb") as f:
                 files = {"file": (filename, f, content_type)}
@@ -305,15 +305,34 @@ async def send_to_discord(
         else:
             if not message_text:
                 return None, None
-            text = role_mention + reply_prefix + message_text
-            payload = {"content": text, "username": bot_username, "flags": 4}
+            
+            # Build embed payload
+            payload = discord_embeds.create_webhook_payload(
+                message_text=message_text,
+                role_id=role_id,
+                quoted_text=quoted_text,
+                username=bot_username,
+                use_embed=True,
+            )
+            
+            # Add reply link to embed if available
+            if reply_link and payload.get('embeds'):
+                embed_desc = payload['embeds'][0].get('description', '')
+                reply_text = f"↩️ [Reply to message]({reply_link})"
+                if embed_desc:
+                    payload['embeds'][0]['description'] = f"{reply_text}\n\n{embed_desc}"
+                else:
+                    payload['embeds'][0]['description'] = reply_text
+            
             response = requests.post(url, json=payload)
 
         response.raise_for_status()
         resp_json          = response.json()
         discord_message_id = str(resp_json.get("id", ""))
         logger.info(f"Sent to Discord — discord_message_id={discord_message_id}")
-        return discord_message_id or None, text
+        
+        # Return the original text for logging
+        return discord_message_id or None, message_text
 
     except Exception as e:
         logger.error(f"Failed to send message to Discord: {e}")
