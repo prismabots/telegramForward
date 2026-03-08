@@ -92,25 +92,9 @@ ai_api_key = (
 
 
 # ---------------------------------------------------------------------------
-# Webhook URL resolver (handles short URLs / redirects)
 # ---------------------------------------------------------------------------
-
-def resolve_webhook_url(url: str) -> str:
-    """
-    Follow any redirects (e.g. short.io links) and return the final URL.
-    This ensures we always POST directly to the real Discord webhook endpoint,
-    since requests.post() does not re-POST after a 301/302 redirect.
-    """
-    try:
-        resp = requests.head(url, allow_redirects=True, timeout=10)
-        final = resp.url
-        if final != url:
-            logger.info(f"Webhook URL resolved: {url} → {final}")
-        return final
-    except Exception as e:
-        logger.warning(f"Could not resolve webhook URL '{url}', using as-is: {e}")
-        return url
-
+# Discord channel ID fetcher
+# ---------------------------------------------------------------------------
 
 def fetch_discord_channel_id(webhook_url: str) -> str | None:
     """
@@ -149,13 +133,13 @@ if not db_channels:
 # Populated from DB; used during resolve phase.
 channel_configs: dict[str, dict] = {}
 for ch in db_channels:
-    resolved_webhook = resolve_webhook_url(ch["discord_webhook"])
+    webhook_url = ch["discord_webhook"]
     channel_configs[ch["chat_id"]] = {
-        "webhook":            resolved_webhook,
+        "webhook":            webhook_url,
         "name":               ch["name"],
         "db_id":              ch["id"],
         "role_id":            ch.get("discord_role_id"),
-        "discord_channel_id": fetch_discord_channel_id(resolved_webhook),
+        "discord_channel_id": fetch_discord_channel_id(webhook_url),
         "ai_enabled":         ch.get("ai_enabled", False),
         "ai_triage_prompt":   ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
         "ai_format_prompt":   ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
