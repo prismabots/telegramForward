@@ -103,12 +103,9 @@ def cmd_channel_delete(args):
     if ch is None:
         return
 
-    print(f"\n  ⚠  You are about to permanently delete:")
-    print(f"     [{ch['id']}] {ch['name']}  ({ch['chat_id']})")
-    print(f"     This will also delete ALL archived messages for this channel.\n")
-    confirm = input("Type the channel name to confirm, or Enter to cancel: ").strip()
-    if confirm != ch["name"]:
-        print("Name did not match. Aborted.")
+    confirm = input(f"Delete '{ch['name']}' and all its archived messages? [y/N] ").strip().lower()
+    if confirm != "y":
+        print("Aborted.")
         return
 
     deleted = db.delete_channel(ch["id"])
