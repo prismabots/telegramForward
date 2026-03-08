@@ -138,9 +138,13 @@ async def _query_sonar(session: aiohttp.ClientSession, prompt: str, system: str,
 
 
 async def _query_glm(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
-    """Zhipu AI GLM via the official zai-sdk (async, overseas endpoint)."""
+    """Zhipu AI GLM via the official zai-sdk (async, overseas endpoint).
+
+    Uses thinking mode (chain-of-thought) when the model supports it.
+    temperature must be 1.0 when thinking is enabled (Z.ai requirement).
+    The final JSON answer lives in message.content; reasoning_content is ignored.
+    """
     from zai import ZaiClient
-    import asyncio
 
     client = ZaiClient(api_key=api_key)
 
@@ -152,7 +156,9 @@ async def _query_glm(session: aiohttp.ClientSession, prompt: str, system: str, m
                 {"role": "system", "content": system},
                 {"role": "user",   "content": prompt},
             ],
-            temperature=0.1,
+            thinking={"type": "enabled"},
+            temperature=1.0,   # required by Z.ai when thinking is enabled
+            max_tokens=4096,
         )
         return resp.choices[0].message.content
 
