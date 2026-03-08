@@ -20,7 +20,7 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Default triage prompt (used when a channel has no custom ai_prompt)
+# Default prompts (used when a channel has no custom prompt set)
 # ---------------------------------------------------------------------------
 
 DEFAULT_TRIAGE_PROMPT = """You are a financial signal triage assistant.
@@ -45,9 +45,24 @@ Respond with valid JSON only. No markdown, no extra text.
 Format:
 {
   "action": "forward" | "discard",
-  "reason": "<one short sentence explaining why>",
-  "rewritten_text": "<optional cleaned-up version of the message — omit or null if no rewrite needed>"
+  "reason": "<one short sentence explaining why>"
 }
+"""
+
+DEFAULT_FORMAT_PROMPT = """You are a financial content formatter for a Discord community.
+
+You will receive a Telegram message that has already been approved for forwarding.
+Your job is to rewrite it into clean, well-structured Discord markdown.
+
+Rules:
+- Preserve all factual content — never remove or alter numbers, tickers, or signals
+- Use **bold** for key figures, tickers, and action words (BUY, SELL, TP, SL)
+- Use bullet points for multi-part information
+- Remove noise: excessive emojis, ALL-CAPS filler, promotional language
+- Keep it concise — trim fluff without losing substance
+- If the message is already clean and concise, return it unchanged
+
+Respond with the formatted message text only. No JSON, no commentary.
 """
 
 # ---------------------------------------------------------------------------
@@ -209,31 +224,33 @@ class TriageResult:
 async def triage_message(
     message_text: str,
     channel_name: str,
-    system_prompt: str,
+    triage_prompt: str,
+    format_prompt: str,
     provider: str,
     model: str,
     api_key: str,
 ) -> TriageResult:
     """
-    Run the message through the configured AI model and return a TriageResult.
+    Two-pass AI pipeline:
+      Pass 1 — Triage: decide "forward" or "discard" using triage_prompt.
+      Pass 2 — Format: rewrite the approved message using format_prompt.
 
     On any error (network, parse, etc.) the message is always forwarded
     unchanged so a failing AI never silently drops messages.
     """
     if not message_text or not message_text.strip():
-        # Nothing to triage — forward as-is
         return TriageResult("forward", "empty message, skipped triage", None)
 
     user_prompt = f"Channel: {channel_name}\n\nMessage:\n{message_text}"
 
+    # ── Pass 1: Triage ────────────────────────────────────────────────────
     try:
         async with aiohttp.ClientSession() as session:
             raw = await asyncio.wait_for(
-                _call_provider(session, user_prompt, system_prompt, provider, model, api_key),
+                _call_provider(session, user_prompt, triage_prompt, provider, model, api_key),
                 timeout=35.0,
             )
 
-        # Strip markdown code fences if the model wraps its JSON
         clean = raw.strip()
         if clean.startswith("```"):
             clean = clean.split("```")[1]
@@ -241,24 +258,43 @@ async def triage_message(
                 clean = clean[4:]
             clean = clean.strip()
 
-        data = json.loads(clean)
-        action   = str(data.get("action", "forward")).lower()
-        reason   = str(data.get("reason", ""))
-        rewrite  = data.get("rewritten_text") or None
+        data   = json.loads(clean)
+        action = str(data.get("action", "forward")).lower()
+        reason = str(data.get("reason", ""))
 
         if action not in ("forward", "discard"):
-            logger.warning(f"AI returned unexpected action '{action}', defaulting to forward")
+            logger.warning(f"AI triage returned unexpected action '{action}', defaulting to forward")
             action = "forward"
 
         logger.info(f"AI triage [{channel_name}]: {action} — {reason}")
-        return TriageResult(action, reason, rewrite)
 
     except asyncio.TimeoutError:
-        logger.warning(f"AI triage timed out for channel '{channel_name}' — forwarding original")
+        logger.warning(f"AI triage timed out for '{channel_name}' — forwarding original")
         return TriageResult("forward", "triage timed out", None)
     except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"AI triage returned invalid JSON for '{channel_name}': {e} — forwarding original")
-        return TriageResult("forward", f"invalid AI response: {e}", None)
+        logger.warning(f"AI triage invalid JSON for '{channel_name}': {e} — forwarding original")
+        return TriageResult("forward", f"invalid triage response: {e}", None)
     except Exception as e:
         logger.error(f"AI triage error for '{channel_name}': {e} — forwarding original")
         return TriageResult("forward", f"triage error: {e}", None)
+
+    if action == "discard":
+        return TriageResult("discard", reason, None)
+
+    # ── Pass 2: Format ────────────────────────────────────────────────────
+    rewritten: str | None = None
+    try:
+        async with aiohttp.ClientSession() as session:
+            rewritten = await asyncio.wait_for(
+                _call_provider(session, message_text, format_prompt, provider, model, api_key),
+                timeout=35.0,
+            )
+        rewritten = rewritten.strip() or None
+        logger.info(f"AI format [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
+
+    except asyncio.TimeoutError:
+        logger.warning(f"AI format timed out for '{channel_name}' — using original text")
+    except Exception as e:
+        logger.warning(f"AI format error for '{channel_name}': {e} — using original text")
+
+    return TriageResult("forward", reason, rewritten)

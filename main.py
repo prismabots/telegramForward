@@ -13,7 +13,7 @@ import sys
 # Ensure db module is importable from the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
-from ai_services import triage_message, DEFAULT_TRIAGE_PROMPT
+from ai_services import triage_message, DEFAULT_TRIAGE_PROMPT, DEFAULT_FORMAT_PROMPT
 
 # ---------------------------------------------------------------------------
 # Logging setup (basic level first; overridden after DB load below)
@@ -157,7 +157,8 @@ for ch in db_channels:
         "role_id":            ch.get("discord_role_id"),
         "discord_channel_id": fetch_discord_channel_id(resolved_webhook),
         "ai_enabled":         ch.get("ai_enabled", False),
-        "ai_prompt":          ch.get("ai_prompt") or DEFAULT_TRIAGE_PROMPT,
+        "ai_triage_prompt":   ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
+        "ai_format_prompt":   ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
     }
     logger.info(f"Loaded channel from DB: {ch['name']} ({ch['chat_id']})")
 
@@ -343,7 +344,8 @@ async def resolve_channels():
                 "role_id":            cfg["role_id"],
                 "discord_channel_id": cfg["discord_channel_id"],
                 "ai_enabled":         cfg["ai_enabled"],
-                "ai_prompt":          cfg["ai_prompt"],
+                "ai_triage_prompt":   cfg["ai_triage_prompt"],
+                "ai_format_prompt":   cfg["ai_format_prompt"],
             }
             logger.info(
                 f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -403,7 +405,8 @@ async def handle_new_message(event):
         role_id             = cfg.get("role_id")
         discord_channel_id  = cfg.get("discord_channel_id")
         ai_enabled          = cfg.get("ai_enabled", False)
-        ai_prompt           = cfg.get("ai_prompt", DEFAULT_TRIAGE_PROMPT)
+        ai_triage_prompt    = cfg.get("ai_triage_prompt", DEFAULT_TRIAGE_PROMPT)
+        ai_format_prompt    = cfg.get("ai_format_prompt", DEFAULT_FORMAT_PROMPT)
 
         msg          = event.message
         message_text = msg.text or msg.message or ""
@@ -461,12 +464,13 @@ async def handle_new_message(event):
         triage_reason   = None
         if ai_enabled and ai_api_key and message_text:
             triage = await triage_message(
-                message_text = message_text,
-                channel_name = channel_name,
-                system_prompt = ai_prompt,
-                provider     = ai_provider,
-                model        = ai_model,
-                api_key      = ai_api_key,
+                message_text  = message_text,
+                channel_name  = channel_name,
+                triage_prompt = ai_triage_prompt,
+                format_prompt = ai_format_prompt,
+                provider      = ai_provider,
+                model         = ai_model,
+                api_key       = ai_api_key,
             )
             triage_action = triage.action
             triage_reason = triage.reason

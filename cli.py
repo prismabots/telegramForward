@@ -40,13 +40,16 @@ def _check_db_url():
 
 
 def _print_channel(ch: dict):
-    status      = "✓ enabled" if ch["enabled"] else "✗ disabled"
-    tg_id       = ch.get("telegram_channel_id") or "not yet resolved"
-    role_id     = ch.get("discord_role_id") or "none"
-    ai_enabled  = ch.get("ai_enabled", False)
-    ai_prompt   = ch.get("ai_prompt")
+    status          = "✓ enabled" if ch["enabled"] else "✗ disabled"
+    tg_id           = ch.get("telegram_channel_id") or "not yet resolved"
+    role_id         = ch.get("discord_role_id") or "none"
+    ai_enabled      = ch.get("ai_enabled", False)
+    ai_triage       = ch.get("ai_triage_prompt")
+    ai_format       = ch.get("ai_format_prompt")
     if ai_enabled:
-        ai_line = "enabled" + (" (custom prompt)" if ai_prompt else " (default prompt)")
+        triage_note = "custom" if ai_triage else "default"
+        format_note = "custom" if ai_format else "default"
+        ai_line = f"enabled  (triage: {triage_note} prompt | format: {format_note} prompt)"
     else:
         ai_line = "disabled"
     print(
@@ -208,8 +211,8 @@ def cmd_channel_clear_role(args):
 
 
 def cmd_channel_set_ai(args):
-    """Interactively pick a channel and configure AI triage for it."""
-    from ai_services import DEFAULT_TRIAGE_PROMPT
+    """Interactively pick a channel and configure AI triage + format prompts."""
+    from ai_services import DEFAULT_TRIAGE_PROMPT, DEFAULT_FORMAT_PROMPT
 
     ch = _pick_channel("Enter channel ID (or Enter to cancel): ")
     if ch is None:
@@ -220,30 +223,37 @@ def cmd_channel_set_ai(args):
         print("Aborted.")
         return
 
-    print(
-        f"\n  Paste a custom system prompt for '{ch['name']}' and press Enter twice,\n"
-        f"  or press Enter immediately to use the default prompt.\n"
+    def _read_prompt(label: str) -> str | None:
+        print(
+            f"\n  [{label}] Paste a custom prompt and press Enter twice,\n"
+            f"  or press Enter immediately to use the default.\n"
+        )
+        lines = []
+        try:
+            while True:
+                line = input()
+                if line == "" and lines and lines[-1] == "":
+                    break
+                lines.append(line)
+        except EOFError:
+            pass
+        while lines and lines[-1] == "":
+            lines.pop()
+        return "\n".join(lines).strip() or None
+
+    triage_prompt = _read_prompt("Triage prompt  — decides forward / discard")
+    format_prompt = _read_prompt("Format prompt  — rewrites approved messages")
+
+    result = db.update_channel(
+        ch["id"],
+        ai_enabled       = True,
+        ai_triage_prompt = triage_prompt,
+        ai_format_prompt = format_prompt,
     )
-    lines = []
-    try:
-        while True:
-            line = input()
-            if line == "" and lines and lines[-1] == "":
-                break
-            lines.append(line)
-    except EOFError:
-        pass
-
-    # Drop the trailing blank line collected before EOF / double-Enter
-    while lines and lines[-1] == "":
-        lines.pop()
-
-    custom_prompt = "\n".join(lines).strip() or None
-
-    result = db.update_channel(ch["id"], ai_enabled=True, ai_prompt=custom_prompt)
     if result:
-        prompt_note = "custom prompt saved" if custom_prompt else "using default prompt"
-        print(f"\n✓ AI triage enabled for '{result['name']}' (ID {result['id']}) — {prompt_note}.")
+        tp = "custom" if triage_prompt else "default"
+        fp = "custom" if format_prompt else "default"
+        print(f"\n✓ AI enabled for '{result['name']}' (ID {result['id']}) — triage: {tp}, format: {fp}.")
     else:
         print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
         sys.exit(1)
@@ -264,7 +274,12 @@ def cmd_channel_clear_ai(args):
         print("Aborted.")
         return
 
-    result = db.update_channel(ch["id"], ai_enabled=False, ai_prompt=None)
+    result = db.update_channel(
+        ch["id"],
+        ai_enabled       = False,
+        ai_triage_prompt = None,
+        ai_format_prompt = None,
+    )
     if result:
         print(f"✓ AI triage disabled for '{result['name']}' (ID {result['id']}).")
     else:

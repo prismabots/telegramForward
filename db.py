@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS tele_channels (
     discord_webhook     TEXT        NOT NULL,
     discord_role_id     TEXT,
     ai_enabled          BOOLEAN     NOT NULL DEFAULT FALSE,
-    ai_prompt           TEXT,
+    ai_triage_prompt    TEXT,
+    ai_format_prompt    TEXT,
     enabled             BOOLEAN     NOT NULL DEFAULT TRUE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -112,14 +113,36 @@ BEGIN
     END IF;
 END $$;
 
--- Idempotent: add ai_prompt if this is an existing DB
+-- Idempotent: rename ai_prompt -> ai_triage_prompt if old column still exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_prompt'
+    ) THEN
+        ALTER TABLE tele_channels RENAME COLUMN ai_prompt TO ai_triage_prompt;
+    END IF;
+END $$;
+
+-- Idempotent: add ai_triage_prompt if this is a fresh DB
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'tele_channels' AND column_name = 'ai_prompt'
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_triage_prompt'
     ) THEN
-        ALTER TABLE tele_channels ADD COLUMN ai_prompt TEXT;
+        ALTER TABLE tele_channels ADD COLUMN ai_triage_prompt TEXT;
+    END IF;
+END $$;
+
+-- Idempotent: add ai_format_prompt if this is an existing DB
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_format_prompt'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_format_prompt TEXT;
     END IF;
 END $$;
 
@@ -273,7 +296,7 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
     Update one or more columns on a channel row.
     Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id
     """
-    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", "ai_enabled", "ai_prompt"}
+    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", "ai_enabled", "ai_triage_prompt", "ai_format_prompt"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None
