@@ -99,15 +99,23 @@ def cmd_channel_disable(args):
 
 
 def cmd_channel_delete(args):
-    confirm = input(f"Delete channel ID {args.id}? This also deletes all archived messages. [y/N] ")
-    if confirm.lower() != "y":
-        print("Aborted.")
+    ch = _pick_channel("Enter channel ID to delete (or Enter to cancel): ")
+    if ch is None:
         return
-    deleted = db.delete_channel(args.id)
+
+    print(f"\n  ⚠  You are about to permanently delete:")
+    print(f"     [{ch['id']}] {ch['name']}  ({ch['chat_id']})")
+    print(f"     This will also delete ALL archived messages for this channel.\n")
+    confirm = input("Type the channel name to confirm, or Enter to cancel: ").strip()
+    if confirm != ch["name"]:
+        print("Name did not match. Aborted.")
+        return
+
+    deleted = db.delete_channel(ch["id"])
     if deleted:
-        print(f"Channel {args.id} deleted.")
+        print(f"✓ Channel '{ch['name']}' (ID {ch['id']}) deleted.")
     else:
-        print(f"Channel ID {args.id} not found.", file=sys.stderr)
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -256,8 +264,7 @@ def build_parser() -> argparse.ArgumentParser:
     disable_p = ch_sub.add_parser("disable", help="Disable a channel by ID")
     disable_p.add_argument("id", type=int)
 
-    delete_p = ch_sub.add_parser("delete", help="Delete a channel by ID")
-    delete_p.add_argument("id", type=int)
+    delete_p = ch_sub.add_parser("delete", help="Interactively select and delete a channel")
 
     set_role_p = ch_sub.add_parser("set-role", help="Set a Discord role mention for a channel")
     set_role_p.add_argument("role_id", nargs="?", default=None,
