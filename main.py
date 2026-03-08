@@ -517,6 +517,21 @@ async def handle_new_message(event):
         # ---------------------------------------------------------------------------
         triage_action   = "forward"
         triage_reason   = None
+        
+        # Pre-processing: Remove French disclaimer BEFORE AI processing
+        if "France Trading Pro" in channel_name and message_text:
+            disclaimers = [
+                "⚠️ Ceci n'est pas un conseil financier, faites vos propres recherche.",
+                "Ceci n'est pas un conseil financier, faites vos propres recherche.",
+                "⚠️ Ceci n'est pas un conseil financier",
+                "Ceci n'est pas un conseil financier",
+            ]
+            for disclaimer in disclaimers:
+                if disclaimer in message_text:
+                    message_text = message_text.replace(disclaimer, "").strip()
+                    logger.info(f"[{channel_name}] Removed French disclaimer (pre-AI)")
+                    break
+        
         if ai_enabled and ai_api_key and message_text:
             triage = await triage_message(
                 message_text  = message_text,
@@ -532,13 +547,6 @@ async def handle_new_message(event):
             triage_reason = triage.reason
             if triage.rewritten_text:
                 message_text = triage.rewritten_text
-        
-        # Post-processing: Remove French disclaimer for France Trading Pro channel
-        if "France Trading Pro" in channel_name and message_text:
-            disclaimer = "⚠️ Ceci n'est pas un conseil financier, faites vos propres recherche."
-            if disclaimer in message_text:
-                message_text = message_text.replace(disclaimer, "").strip()
-                logger.info(f"[{channel_name}] Removed French disclaimer")
 
         if triage_action == "discard":
             logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
