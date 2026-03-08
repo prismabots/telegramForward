@@ -63,7 +63,17 @@ bot_username = settings.get("bot_username", "Telegram Forward Bot")
 # ---------------------------------------------------------------------------
 
 ai_provider = settings.get("ai_provider", "openai")
-ai_model    = settings.get("ai_model",    "gpt-4o-mini")
+
+# Per-provider default models (used when ai_model is not set in DB)
+_AI_DEFAULT_MODELS = {
+    "openai":   "gpt-5-nano",
+    "google":   "gemini-2.0-flash",
+    "grok":     "grok-4.1-fast",
+    "deepseek": "deepseek-chat",
+    "sonar":    "sonar",
+    "glm":      "glm-4.7-flashx",
+}
+ai_model = settings.get("ai_model") or _AI_DEFAULT_MODELS.get(ai_provider, "gpt-5-nano")
 
 # API keys are stored as DigitalOcean environment variables — one per provider.
 # The DB setting ai_api_key (if set) still takes precedence for local overrides.
