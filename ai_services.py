@@ -8,7 +8,7 @@ Each incoming Telegram message is passed to an AI model which decides:
 The AI provider, model, and per-channel system prompts are all stored
 in the PostgreSQL database (tele_settings / tele_channels).
 
-Supported providers: openai, google, grok, deepseek, perplexity
+Supported providers: openai, google, grok, deepseek, sonar, glm
 """
 
 import os
@@ -119,7 +119,8 @@ async def _query_deepseek(session: aiohttp.ClientSession, prompt: str, system: s
         raise Exception(f"DeepSeek error {resp.status}: {await resp.text()}")
 
 
-async def _query_perplexity(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
+async def _query_sonar(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
+    """Perplexity SONAR API — same endpoint as the old perplexity provider."""
     url = "https://api.perplexity.ai/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
@@ -133,7 +134,25 @@ async def _query_perplexity(session: aiohttp.ClientSession, prompt: str, system:
     async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
         if resp.status == 200:
             return (await resp.json())["choices"][0]["message"]["content"]
-        raise Exception(f"Perplexity error {resp.status}: {await resp.text()}")
+        raise Exception(f"Sonar error {resp.status}: {await resp.text()}")
+
+
+async def _query_glm(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
+    """Zhipu AI GLM (ChatGLM) — OpenAI-compatible endpoint."""
+    url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": prompt},
+        ],
+        "temperature": 0.1,
+    }
+    async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+        if resp.status == 200:
+            return (await resp.json())["choices"][0]["message"]["content"]
+        raise Exception(f"GLM error {resp.status}: {await resp.text()}")
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +169,10 @@ async def _call_provider(session: aiohttp.ClientSession, prompt: str, system: st
         return await _query_grok(session, prompt, system, model, api_key)
     elif provider == "deepseek":
         return await _query_deepseek(session, prompt, system, model, api_key)
-    elif provider == "perplexity":
-        return await _query_perplexity(session, prompt, system, model, api_key)
+    elif provider in ("sonar", "perplexity"):   # perplexity kept as legacy alias
+        return await _query_sonar(session, prompt, system, model, api_key)
+    elif provider == "glm":
+        return await _query_glm(session, prompt, system, model, api_key)
     else:
         raise ValueError(f"Unknown AI provider: '{provider}'")
 

@@ -64,7 +64,21 @@ bot_username = settings.get("bot_username", "Telegram Forward Bot")
 
 ai_provider = settings.get("ai_provider", "openai")
 ai_model    = settings.get("ai_model",    "gpt-4o-mini")
-ai_api_key  = settings.get("ai_api_key",  "") or os.environ.get("AI_API_KEY", "")
+
+# API keys are stored as DigitalOcean environment variables — one per provider.
+# The DB setting ai_api_key (if set) still takes precedence for local overrides.
+_AI_KEY_ENV_MAP = {
+    "openai":     "OPENAI_API_KEY",
+    "google":     "GOOGLE_API_KEY",
+    "grok":       "X_API_KEY",
+    "deepseek":   "DEEPSEEK_API_KEY",
+    "sonar":      "SONAR_API_KEY",
+    "glm":        "GLM_API_KEY",
+}
+ai_api_key = (
+    settings.get("ai_api_key", "")
+    or os.environ.get(_AI_KEY_ENV_MAP.get(ai_provider, ""), "")
+)
 
 
 # ---------------------------------------------------------------------------
