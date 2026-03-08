@@ -116,22 +116,23 @@ def fetch_discord_channel_id(webhook_url: str) -> str | None:
         return None
 
 
-def extract_guild_id_from_webhook(webhook_url: str) -> str | None:
+def fetch_discord_guild_id(webhook_url: str) -> str | None:
     """
-    Extract guild_id from Discord webhook URL.
-    Format: https://discord.com/api/webhooks/GUILD_ID/WEBHOOK_TOKEN
-    Returns guild_id string, or None if not found.
+    Query the Discord webhook info endpoint to get the guild_id.
+    This is required for building Discord message links.
+    Returns the guild_id string, or None on failure.
     """
     try:
-        # Remove query params and split
+        # Strip query string before hitting the info endpoint
         base_url = webhook_url.split("?")[0]
-        parts = base_url.rstrip("/").split("/")
-        # Expected: [..., 'webhooks', 'guild_id', 'token']
-        if len(parts) >= 3 and parts[-3] == "webhooks":
-            return parts[-2]
-        return None
+        resp = requests.get(base_url, timeout=10)
+        resp.raise_for_status()
+        guild_id = str(resp.json().get("guild_id", ""))
+        if guild_id:
+            logger.info(f"Discord guild_id for webhook: {guild_id}")
+        return guild_id or None
     except Exception as e:
-        logger.warning(f"Could not extract guild_id from webhook URL: {e}")
+        logger.warning(f"Could not fetch Discord guild_id from webhook: {e}")
         return None
 
 
@@ -160,6 +161,7 @@ for ch in db_channels:
         "db_id":              ch["id"],
         "role_id":            ch.get("discord_role_id"),
         "discord_channel_id": fetch_discord_channel_id(webhook_url),
+        "discord_guild_id":   fetch_discord_guild_id(webhook_url),
         "ai_enabled":         ch.get("ai_enabled", False),
         "ai_triage_prompt":   ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
         "ai_format_prompt":   ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
@@ -215,6 +217,7 @@ async def send_to_discord(
     reply_to_discord_id: str | None = None,
     role_id: str | None = None,
     discord_channel_id: str | None = None,
+    discord_guild_id: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -223,7 +226,7 @@ async def send_to_discord(
     allowing us to capture the discord_message_id for reply threading.
 
     If role_id is provided, a role mention is prepended to the message.
-    discord_channel_id is required for reply threading (message_reference).
+    discord_channel_id and discord_guild_id are required for building reply links.
 
     Returns:
         (discord_message_id, actual_text_sent) or (None, None) on failure.
@@ -238,18 +241,13 @@ async def send_to_discord(
     # NOTE: Discord webhooks cannot create threaded replies like bot messages can.
     # Instead, we'll prepend a message link to provide context.
     reply_prefix = ""
-    if reply_to_discord_id and discord_channel_id:
+    if reply_to_discord_id and discord_channel_id and discord_guild_id:
         # Format: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
-        # We need to extract guild_id from the webhook URL
-        guild_id = extract_guild_id_from_webhook(webhook_url)
-        if guild_id:
-            reply_prefix = f"↩️ [Reply to message](https://discord.com/channels/{guild_id}/{discord_channel_id}/{reply_to_discord_id})\n\n"
-        else:
-            logger.warning(f"Cannot create reply link: guild_id not found in webhook URL")
-    elif reply_to_discord_id:
+        reply_prefix = f"↩️ [Reply to message](https://discord.com/channels/{discord_guild_id}/{discord_channel_id}/{reply_to_discord_id})\n\n"
+    elif reply_to_discord_id and (not discord_channel_id or not discord_guild_id):
         logger.warning(
             f"Cannot create reply link to Discord message {reply_to_discord_id}: "
-            f"discord_channel_id is not available."
+            f"discord_channel_id or discord_guild_id not available."
         )
 
     try:
@@ -408,13 +406,14 @@ async def handle_new_message(event):
         db_channel_id       = cfg["db_id"]
         role_id             = cfg.get("role_id")
         discord_channel_id  = cfg.get("discord_channel_id")
+        discord_guild_id    = cfg.get("discord_guild_id")
         ai_enabled          = cfg.get("ai_enabled", False)
         ai_triage_prompt    = cfg.get("ai_triage_prompt", DEFAULT_TRIAGE_PROMPT)
         ai_format_prompt    = cfg.get("ai_format_prompt", DEFAULT_FORMAT_PROMPT)
 
-        if not discord_channel_id:
+        if not discord_channel_id or not discord_guild_id:
             logger.warning(
-                f"[{channel_name}] discord_channel_id not available — reply threading will not work"
+                f"[{channel_name}] discord_channel_id or discord_guild_id not available — reply threading will not work"
             )
 
         msg          = event.message
@@ -506,6 +505,7 @@ async def handle_new_message(event):
             reply_to_discord_id,
             role_id,
             discord_channel_id,
+            discord_guild_id,
         )
 
         # Archive to DB
