@@ -42,11 +42,13 @@ def _check_db_url():
 def _print_channel(ch: dict):
     status      = "✓ enabled" if ch["enabled"] else "✗ disabled"
     tg_id       = ch.get("telegram_channel_id") or "not yet resolved"
+    role_id     = ch.get("discord_role_id") or "none"
     print(
         f"  [{ch['id']}] {ch['name']}\n"
         f"       chat_id      : {ch['chat_id']}\n"
         f"       telegram_id  : {tg_id}\n"
         f"       webhook      : {ch['discord_webhook']}\n"
+        f"       role mention : {role_id}\n"
         f"       status       : {status}\n"
         f"       created      : {ch['created_at']}"
     )
@@ -106,6 +108,90 @@ def cmd_channel_delete(args):
         print(f"Channel {args.id} deleted.")
     else:
         print(f"Channel ID {args.id} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
+def _pick_channel(prompt: str) -> dict | None:
+    """
+    Print a numbered list of all channels and let the user pick one
+    interactively.  Returns the chosen channel dict, or None if aborted.
+    """
+    channels = db.get_channels(enabled_only=False)
+    if not channels:
+        print("No channels configured.")
+        return None
+
+    print()
+    print(f"  {'ID':>3}  {'Name':<30}  {'Role mention'}")
+    print(f"  {'─'*3}  {'─'*30}  {'─'*20}")
+    for ch in channels:
+        role = ch.get("discord_role_id") or "—"
+        status = "" if ch["enabled"] else "  [disabled]"
+        print(f"  {ch['id']:>3}  {ch['name']:<30}  {role}{status}")
+    print()
+
+    while True:
+        raw = input(prompt).strip()
+        if raw.lower() in ("q", "quit", ""):
+            print("Aborted.")
+            return None
+        if raw.isdigit():
+            ch_id = int(raw)
+            match = next((c for c in channels if c["id"] == ch_id), None)
+            if match:
+                return match
+        print(f"  Invalid ID '{raw}'. Enter a number from the list above, or press Enter to cancel.")
+
+
+def cmd_channel_set_role(args):
+    """Interactively pick a channel and assign a Discord role ID to it."""
+    ch = _pick_channel("Enter channel ID (or Enter to cancel): ")
+    if ch is None:
+        return
+
+    if args.role_id:
+        role_id = args.role_id.strip()
+    else:
+        role_id = input(
+            f"Enter Discord role ID to assign to '{ch['name']}'\n"
+            f"  (Right-click the role in Discord → Copy Role ID)\n"
+            f"  Role ID: "
+        ).strip()
+
+    if not role_id:
+        print("No role ID entered. Aborted.")
+        return
+
+    result = db.update_channel(ch["id"], discord_role_id=role_id)
+    if result:
+        print(f"\n✓ Role <@&{role_id}> assigned to '{result['name']}' (ID {result['id']}).")
+        print(f"  Every forwarded message will now ping that role.")
+    else:
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_channel_clear_role(args):
+    """Interactively pick a channel and remove its Discord role mention."""
+    ch = _pick_channel("Enter channel ID to clear role from (or Enter to cancel): ")
+    if ch is None:
+        return
+
+    current = ch.get("discord_role_id")
+    if not current:
+        print(f"Channel '{ch['name']}' has no role set — nothing to do.")
+        return
+
+    confirm = input(f"Clear role <@&{current}> from '{ch['name']}'? [y/N] ")
+    if confirm.lower() != "y":
+        print("Aborted.")
+        return
+
+    result = db.update_channel(ch["id"], discord_role_id=None)
+    if result:
+        print(f"✓ Role mention cleared from '{result['name']}' (ID {result['id']}).")
+    else:
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -173,6 +259,12 @@ def build_parser() -> argparse.ArgumentParser:
     delete_p = ch_sub.add_parser("delete", help="Delete a channel by ID")
     delete_p.add_argument("id", type=int)
 
+    set_role_p = ch_sub.add_parser("set-role", help="Set a Discord role mention for a channel")
+    set_role_p.add_argument("role_id", nargs="?", default=None,
+                            help="Discord role ID (prompted interactively if omitted)")
+
+    ch_sub.add_parser("clear-role", help="Remove the Discord role mention from a channel")
+
     # ── setting ───────────────────────────────────────────────────────────
     st_parser = sub.add_parser("setting", help="Manage global settings")
     st_sub = st_parser.add_subparsers(dest="action", required=True)
@@ -194,14 +286,16 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 _COMMANDS = {
-    ("channel", "list"):    cmd_channel_list,
-    ("channel", "add"):     cmd_channel_add,
-    ("channel", "enable"):  cmd_channel_enable,
-    ("channel", "disable"): cmd_channel_disable,
-    ("channel", "delete"):  cmd_channel_delete,
-    ("setting", "list"):    cmd_setting_list,
-    ("setting", "get"):     cmd_setting_get,
-    ("setting", "set"):     cmd_setting_set,
+    ("channel", "list"):       cmd_channel_list,
+    ("channel", "add"):        cmd_channel_add,
+    ("channel", "enable"):     cmd_channel_enable,
+    ("channel", "disable"):    cmd_channel_disable,
+    ("channel", "delete"):     cmd_channel_delete,
+    ("channel", "set-role"):   cmd_channel_set_role,
+    ("channel", "clear-role"): cmd_channel_clear_role,
+    ("setting", "list"):       cmd_setting_list,
+    ("setting", "get"):        cmd_setting_get,
+    ("setting", "set"):        cmd_setting_set,
 }
 
 

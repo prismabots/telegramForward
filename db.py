@@ -58,9 +58,21 @@ CREATE TABLE IF NOT EXISTS tele_channels (
     chat_id             TEXT        NOT NULL UNIQUE,
     telegram_channel_id BIGINT      UNIQUE,
     discord_webhook     TEXT        NOT NULL,
+    discord_role_id     TEXT,
     enabled             BOOLEAN     NOT NULL DEFAULT TRUE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent: add discord_role_id if this is an existing DB
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'discord_role_id'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN discord_role_id TEXT;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS tele_messages (
     id                   SERIAL      PRIMARY KEY,
@@ -213,7 +225,7 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
     Update one or more columns on a channel row.
     Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id
     """
-    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id"}
+    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None

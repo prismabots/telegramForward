@@ -77,6 +77,7 @@ for ch in db_channels:
         "webhook": ch["discord_webhook"],
         "name":    ch["name"],
         "db_id":   ch["id"],
+        "role_id": ch.get("discord_role_id"),
     }
     logger.info(f"Loaded channel from DB: {ch['name']} ({ch['chat_id']})")
 
@@ -127,6 +128,7 @@ async def send_to_discord(
     message_text: str,
     media_path: str | None = None,
     reply_to_discord_id: str | None = None,
+    role_id: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -134,9 +136,15 @@ async def send_to_discord(
     Uses ?wait=true so Discord returns the created message object,
     allowing us to capture the discord_message_id for reply threading.
 
+    If role_id is provided, a role mention is prepended to the message
+    so Discord notifies subscribers of that role.
+
     Returns:
         (discord_message_id, actual_text_sent) or (None, None) on failure.
     """
+    # Prepend role mention if configured
+    role_mention = f"<@&{role_id}>\n" if role_id else ""
+
     # Append ?wait=true to get response body with message id
     url = webhook_url.rstrip("/") + ("&" if "?" in webhook_url else "?") + "wait=true"
 
@@ -163,8 +171,8 @@ async def send_to_discord(
                 content_type = mime_type or "application/octet-stream"
                 fallback_text = "File from Telegram"
 
-            text = message_text if message_text else fallback_text
-            payload: dict = {"content": text, "username": bot_username}
+            text = role_mention + (message_text if message_text else fallback_text)
+            payload: dict = {"content": text, "username": bot_username, "flags": 4}
             if message_reference:
                 payload["message_reference"] = message_reference
 
@@ -178,8 +186,8 @@ async def send_to_discord(
         else:
             if not message_text:
                 return None, None
-            text = message_text
-            payload = {"content": text, "username": bot_username}
+            text = role_mention + message_text
+            payload = {"content": text, "username": bot_username, "flags": 4}
             if message_reference:
                 payload["message_reference"] = message_reference
             response = requests.post(url, json=payload)
@@ -242,6 +250,7 @@ async def resolve_channels():
                 "webhook": cfg["webhook"],
                 "name":    cfg["name"],
                 "db_id":   cfg["db_id"],
+                "role_id": cfg["role_id"],
             }
             logger.info(
                 f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -295,9 +304,10 @@ async def handle_new_message(event):
             logger.warning(f"No webhook found for chat {chat.id}")
             return
 
-        webhook_url  = cfg["webhook"]
-        channel_name = cfg["name"]
+        webhook_url   = cfg["webhook"]
+        channel_name  = cfg["name"]
         db_channel_id = cfg["db_id"]
+        role_id       = cfg.get("role_id")
 
         msg          = event.message
         message_text = msg.text or ""
@@ -345,6 +355,7 @@ async def handle_new_message(event):
             message_text,
             media_path,
             reply_to_discord_id,
+            role_id,
         )
 
         # Archive to DB
