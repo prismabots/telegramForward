@@ -116,6 +116,26 @@ def fetch_discord_channel_id(webhook_url: str) -> str | None:
         return None
 
 
+def extract_guild_id_from_webhook(webhook_url: str) -> str | None:
+    """
+    Extract guild_id from Discord webhook URL.
+    Format: https://discord.com/api/webhooks/GUILD_ID/WEBHOOK_TOKEN
+    Returns guild_id string, or None if not found.
+    """
+    try:
+        # Remove query params and split
+        base_url = webhook_url.split("?")[0]
+        parts = base_url.rstrip("/").split("/")
+        # Expected: [..., 'webhooks', 'guild_id', 'token']
+        if len(parts) >= 3 and parts[-3] == "webhooks":
+            return parts[-2]
+        return None
+    except Exception as e:
+        logger.warning(f"Could not extract guild_id from webhook URL: {e}")
+        return None
+
+
+
 # ---------------------------------------------------------------------------
 # Load channels from DB
 # ---------------------------------------------------------------------------
@@ -214,17 +234,21 @@ async def send_to_discord(
     # Append ?wait=true to get response body with message id
     url = webhook_url.rstrip("/") + ("&" if "?" in webhook_url else "?") + "wait=true"
 
-    # Build message_reference payload if this is a reply
-    # Discord requires both message_id AND channel_id for webhook replies
-    message_reference = None
+    # Build message link for replies
+    # NOTE: Discord webhooks cannot create threaded replies like bot messages can.
+    # Instead, we'll prepend a message link to provide context.
+    reply_prefix = ""
     if reply_to_discord_id and discord_channel_id:
-        message_reference = {
-            "message_id": reply_to_discord_id,
-            "channel_id": discord_channel_id,
-        }
+        # Format: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
+        # We need to extract guild_id from the webhook URL
+        guild_id = extract_guild_id_from_webhook(webhook_url)
+        if guild_id:
+            reply_prefix = f"↩️ [Reply to message](https://discord.com/channels/{guild_id}/{discord_channel_id}/{reply_to_discord_id})\n\n"
+        else:
+            logger.warning(f"Cannot create reply link: guild_id not found in webhook URL")
     elif reply_to_discord_id:
         logger.warning(
-            f"Cannot thread reply to Discord message {reply_to_discord_id}: "
+            f"Cannot create reply link to Discord message {reply_to_discord_id}: "
             f"discord_channel_id is not available."
         )
 
@@ -246,10 +270,8 @@ async def send_to_discord(
                 content_type = mime_type or "application/octet-stream"
                 fallback_text = "File from Telegram"
 
-            text = role_mention + (message_text if message_text else fallback_text)
+            text = role_mention + reply_prefix + (message_text if message_text else fallback_text)
             payload: dict = {"content": text, "username": bot_username, "flags": 4}
-            if message_reference:
-                payload["message_reference"] = message_reference
 
             with open(media_path, "rb") as f:
                 files = {"file": (filename, f, content_type)}
@@ -261,10 +283,8 @@ async def send_to_discord(
         else:
             if not message_text:
                 return None, None
-            text = role_mention + message_text
+            text = role_mention + reply_prefix + message_text
             payload = {"content": text, "username": bot_username, "flags": 4}
-            if message_reference:
-                payload["message_reference"] = message_reference
             response = requests.post(url, json=payload)
 
         response.raise_for_status()
