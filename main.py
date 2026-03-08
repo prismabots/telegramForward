@@ -13,6 +13,7 @@ import sys
 # Ensure db module is importable from the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
+from ai_services import triage_message, DEFAULT_TRIAGE_PROMPT
 
 # ---------------------------------------------------------------------------
 # Logging setup (basic level first; overridden after DB load below)
@@ -56,6 +57,14 @@ api_id = int(api_id_str)
 
 # Bot display name for Discord
 bot_username = settings.get("bot_username", "Telegram Forward Bot")
+
+# ---------------------------------------------------------------------------
+# AI triage config (loaded from DB settings)
+# ---------------------------------------------------------------------------
+
+ai_provider = settings.get("ai_provider", "openai")
+ai_model    = settings.get("ai_model",    "gpt-4o-mini")
+ai_api_key  = settings.get("ai_api_key",  "") or os.environ.get("AI_API_KEY", "")
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +132,8 @@ for ch in db_channels:
         "db_id":              ch["id"],
         "role_id":            ch.get("discord_role_id"),
         "discord_channel_id": fetch_discord_channel_id(resolved_webhook),
+        "ai_enabled":         ch.get("ai_enabled", False),
+        "ai_prompt":          ch.get("ai_prompt") or DEFAULT_TRIAGE_PROMPT,
     }
     logger.info(f"Loaded channel from DB: {ch['name']} ({ch['chat_id']})")
 
@@ -307,6 +318,8 @@ async def resolve_channels():
                 "db_id":              cfg["db_id"],
                 "role_id":            cfg["role_id"],
                 "discord_channel_id": cfg["discord_channel_id"],
+                "ai_enabled":         cfg["ai_enabled"],
+                "ai_prompt":          cfg["ai_prompt"],
             }
             logger.info(
                 f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -365,6 +378,8 @@ async def handle_new_message(event):
         db_channel_id       = cfg["db_id"]
         role_id             = cfg.get("role_id")
         discord_channel_id  = cfg.get("discord_channel_id")
+        ai_enabled          = cfg.get("ai_enabled", False)
+        ai_prompt           = cfg.get("ai_prompt", DEFAULT_TRIAGE_PROMPT)
 
         msg          = event.message
         message_text = msg.text or msg.message or ""
@@ -414,6 +429,46 @@ async def handle_new_message(event):
             raw_message = msg.to_dict()
         except Exception:
             raw_message = None
+
+        # ---------------------------------------------------------------------------
+        # AI triage — optionally filter / rewrite the message before forwarding
+        # ---------------------------------------------------------------------------
+        triage_action   = "forward"
+        triage_reason   = None
+        if ai_enabled and ai_api_key and message_text:
+            triage = await triage_message(
+                message_text = message_text,
+                channel_name = channel_name,
+                system_prompt = ai_prompt,
+                provider     = ai_provider,
+                model        = ai_model,
+                api_key      = ai_api_key,
+            )
+            triage_action = triage.action
+            triage_reason = triage.reason
+            if triage.rewritten_text:
+                message_text = triage.rewritten_text
+
+        if triage_action == "discard":
+            logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
+            db.save_message(
+                channel_id           = db_channel_id,
+                telegram_message_id  = tg_msg_id,
+                telegram_reply_to    = tg_reply_to,
+                sender_id            = sender_id,
+                sender_name          = sender_name,
+                message_text         = message_text or None,
+                media_type           = media_type,
+                media_file_name      = media_file_name,
+                raw_message          = raw_message,
+                discord_message_id   = None,
+                discord_message_text = None,
+                discord_username     = bot_username,
+                discord_webhook      = webhook_url,
+                send_status          = "discarded",
+                error_detail         = triage_reason,
+            )
+            return
 
         # Send to Discord
         discord_message_id, discord_text_sent = await send_to_discord(

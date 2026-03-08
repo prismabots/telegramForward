@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS tele_channels (
     telegram_channel_id BIGINT      UNIQUE,
     discord_webhook     TEXT        NOT NULL,
     discord_role_id     TEXT,
+    ai_enabled          BOOLEAN     NOT NULL DEFAULT FALSE,
+    ai_prompt           TEXT,
     enabled             BOOLEAN     NOT NULL DEFAULT TRUE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -96,6 +98,28 @@ BEGIN
         WHERE table_name = 'tele_channels' AND column_name = 'discord_role_id'
     ) THEN
         ALTER TABLE tele_channels ADD COLUMN discord_role_id TEXT;
+    END IF;
+END $$;
+
+-- Idempotent: add ai_enabled if this is an existing DB
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_enabled'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
+
+-- Idempotent: add ai_prompt if this is an existing DB
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_prompt'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_prompt TEXT;
     END IF;
 END $$;
 
@@ -249,7 +273,7 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
     Update one or more columns on a channel row.
     Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id
     """
-    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id"}
+    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", "ai_enabled", "ai_prompt"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None

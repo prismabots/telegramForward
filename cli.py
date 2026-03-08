@@ -43,12 +43,19 @@ def _print_channel(ch: dict):
     status      = "✓ enabled" if ch["enabled"] else "✗ disabled"
     tg_id       = ch.get("telegram_channel_id") or "not yet resolved"
     role_id     = ch.get("discord_role_id") or "none"
+    ai_enabled  = ch.get("ai_enabled", False)
+    ai_prompt   = ch.get("ai_prompt")
+    if ai_enabled:
+        ai_line = "enabled" + (" (custom prompt)" if ai_prompt else " (default prompt)")
+    else:
+        ai_line = "disabled"
     print(
         f"  [{ch['id']}] {ch['name']}\n"
         f"       chat_id      : {ch['chat_id']}\n"
         f"       telegram_id  : {tg_id}\n"
         f"       webhook      : {ch['discord_webhook']}\n"
         f"       role mention : {role_id}\n"
+        f"       ai triage    : {ai_line}\n"
         f"       status       : {status}\n"
         f"       created      : {ch['created_at']}"
     )
@@ -200,6 +207,71 @@ def cmd_channel_clear_role(args):
         sys.exit(1)
 
 
+def cmd_channel_set_ai(args):
+    """Interactively pick a channel and configure AI triage for it."""
+    from ai_services import DEFAULT_TRIAGE_PROMPT
+
+    ch = _pick_channel("Enter channel ID (or Enter to cancel): ")
+    if ch is None:
+        return
+
+    enable_str = input(f"Enable AI triage for '{ch['name']}'? [y/N] ").strip().lower()
+    if enable_str != "y":
+        print("Aborted.")
+        return
+
+    print(
+        f"\n  Paste a custom system prompt for '{ch['name']}' and press Enter twice,\n"
+        f"  or press Enter immediately to use the default prompt.\n"
+    )
+    lines = []
+    try:
+        while True:
+            line = input()
+            if line == "" and lines and lines[-1] == "":
+                break
+            lines.append(line)
+    except EOFError:
+        pass
+
+    # Drop the trailing blank line collected before EOF / double-Enter
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    custom_prompt = "\n".join(lines).strip() or None
+
+    result = db.update_channel(ch["id"], ai_enabled=True, ai_prompt=custom_prompt)
+    if result:
+        prompt_note = "custom prompt saved" if custom_prompt else "using default prompt"
+        print(f"\n✓ AI triage enabled for '{result['name']}' (ID {result['id']}) — {prompt_note}.")
+    else:
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_channel_clear_ai(args):
+    """Interactively pick a channel and disable AI triage on it."""
+    ch = _pick_channel("Enter channel ID to disable AI on (or Enter to cancel): ")
+    if ch is None:
+        return
+
+    if not ch.get("ai_enabled"):
+        print(f"Channel '{ch['name']}' already has AI triage disabled — nothing to do.")
+        return
+
+    confirm = input(f"Disable AI triage for '{ch['name']}'? [y/N] ").strip().lower()
+    if confirm != "y":
+        print("Aborted.")
+        return
+
+    result = db.update_channel(ch["id"], ai_enabled=False, ai_prompt=None)
+    if result:
+        print(f"✓ AI triage disabled for '{result['name']}' (ID {result['id']}).")
+    else:
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Setting subcommands
 # ---------------------------------------------------------------------------
@@ -269,6 +341,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     ch_sub.add_parser("clear-role", help="Remove the Discord role mention from a channel")
 
+    ch_sub.add_parser("set-ai",   help="Enable AI triage on a channel (interactive)")
+    ch_sub.add_parser("clear-ai", help="Disable AI triage on a channel")
+
     # ── setting ───────────────────────────────────────────────────────────
     st_parser = sub.add_parser("setting", help="Manage global settings")
     st_sub = st_parser.add_subparsers(dest="action", required=True)
@@ -297,6 +372,8 @@ _COMMANDS = {
     ("channel", "delete"):     cmd_channel_delete,
     ("channel", "set-role"):   cmd_channel_set_role,
     ("channel", "clear-role"): cmd_channel_clear_role,
+    ("channel", "set-ai"):     cmd_channel_set_ai,
+    ("channel", "clear-ai"):   cmd_channel_clear_ai,
     ("setting", "list"):       cmd_setting_list,
     ("setting", "get"):        cmd_setting_get,
     ("setting", "set"):        cmd_setting_set,
