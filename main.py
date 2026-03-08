@@ -78,6 +78,26 @@ def resolve_webhook_url(url: str) -> str:
         return url
 
 
+def fetch_discord_channel_id(webhook_url: str) -> str | None:
+    """
+    Query the Discord webhook info endpoint to get the channel_id.
+    This is required for message_reference (reply threading) to work.
+    Returns the channel_id string, or None on failure.
+    """
+    try:
+        # Strip query string before hitting the info endpoint
+        base_url = webhook_url.split("?")[0]
+        resp = requests.get(base_url, timeout=10)
+        resp.raise_for_status()
+        channel_id = str(resp.json().get("channel_id", ""))
+        if channel_id:
+            logger.info(f"Discord channel_id for webhook: {channel_id}")
+        return channel_id or None
+    except Exception as e:
+        logger.warning(f"Could not fetch Discord channel_id from webhook: {e}")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Load channels from DB
 # ---------------------------------------------------------------------------
@@ -95,11 +115,13 @@ if not db_channels:
 # Populated from DB; used during resolve phase.
 channel_configs: dict[str, dict] = {}
 for ch in db_channels:
+    resolved_webhook = resolve_webhook_url(ch["discord_webhook"])
     channel_configs[ch["chat_id"]] = {
-        "webhook": resolve_webhook_url(ch["discord_webhook"]),
-        "name":    ch["name"],
-        "db_id":   ch["id"],
-        "role_id": ch.get("discord_role_id"),
+        "webhook":            resolved_webhook,
+        "name":               ch["name"],
+        "db_id":              ch["id"],
+        "role_id":            ch.get("discord_role_id"),
+        "discord_channel_id": fetch_discord_channel_id(resolved_webhook),
     }
     logger.info(f"Loaded channel from DB: {ch['name']} ({ch['chat_id']})")
 
@@ -151,6 +173,7 @@ async def send_to_discord(
     media_path: str | None = None,
     reply_to_discord_id: str | None = None,
     role_id: str | None = None,
+    discord_channel_id: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -158,8 +181,8 @@ async def send_to_discord(
     Uses ?wait=true so Discord returns the created message object,
     allowing us to capture the discord_message_id for reply threading.
 
-    If role_id is provided, a role mention is prepended to the message
-    so Discord notifies subscribers of that role.
+    If role_id is provided, a role mention is prepended to the message.
+    discord_channel_id is required for reply threading (message_reference).
 
     Returns:
         (discord_message_id, actual_text_sent) or (None, None) on failure.
@@ -171,9 +194,18 @@ async def send_to_discord(
     url = webhook_url.rstrip("/") + ("&" if "?" in webhook_url else "?") + "wait=true"
 
     # Build message_reference payload if this is a reply
+    # Discord requires both message_id AND channel_id for webhook replies
     message_reference = None
-    if reply_to_discord_id:
-        message_reference = {"message_id": reply_to_discord_id}
+    if reply_to_discord_id and discord_channel_id:
+        message_reference = {
+            "message_id": reply_to_discord_id,
+            "channel_id": discord_channel_id,
+        }
+    elif reply_to_discord_id:
+        logger.warning(
+            f"Cannot thread reply to Discord message {reply_to_discord_id}: "
+            f"discord_channel_id is not available."
+        )
 
     try:
         if media_path:
@@ -269,10 +301,11 @@ async def resolve_channels():
 
             numeric_id = entity.id
             channel_webhook_map[numeric_id] = {
-                "webhook": cfg["webhook"],
-                "name":    cfg["name"],
-                "db_id":   cfg["db_id"],
-                "role_id": cfg["role_id"],
+                "webhook":            cfg["webhook"],
+                "name":               cfg["name"],
+                "db_id":              cfg["db_id"],
+                "role_id":            cfg["role_id"],
+                "discord_channel_id": cfg["discord_channel_id"],
             }
             logger.info(
                 f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -326,10 +359,11 @@ async def handle_new_message(event):
             logger.warning(f"No webhook found for chat {chat.id}")
             return
 
-        webhook_url   = cfg["webhook"]
-        channel_name  = cfg["name"]
-        db_channel_id = cfg["db_id"]
-        role_id       = cfg.get("role_id")
+        webhook_url         = cfg["webhook"]
+        channel_name        = cfg["name"]
+        db_channel_id       = cfg["db_id"]
+        role_id             = cfg.get("role_id")
+        discord_channel_id  = cfg.get("discord_channel_id")
 
         msg          = event.message
         message_text = msg.text or ""
@@ -378,6 +412,7 @@ async def handle_new_message(event):
             media_path,
             reply_to_discord_id,
             role_id,
+            discord_channel_id,
         )
 
         # Archive to DB
