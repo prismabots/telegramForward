@@ -233,6 +233,7 @@ async def send_to_discord(
     role_id: str | None = None,
     discord_channel_id: str | None = None,
     discord_guild_id: str | None = None,
+    quoted_text: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -242,6 +243,7 @@ async def send_to_discord(
 
     If role_id is provided, a role mention is prepended to the message.
     discord_channel_id and discord_guild_id are required for building reply links.
+    quoted_text is the text from the original message being replied to.
 
     Returns:
         (discord_message_id, actual_text_sent) or (None, None) on failure.
@@ -258,7 +260,14 @@ async def send_to_discord(
     reply_prefix = ""
     if reply_to_discord_id and discord_channel_id and discord_guild_id:
         # Format: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
-        reply_prefix = f"↩️ [Reply to message](https://discord.com/channels/{discord_guild_id}/{discord_channel_id}/{reply_to_discord_id})\n\n"
+        reply_link = f"↩️ [Reply to message](https://discord.com/channels/{discord_guild_id}/{discord_channel_id}/{reply_to_discord_id})"
+        
+        # Include quoted text if available (truncate to 200 chars to avoid spam)
+        if quoted_text:
+            quoted_preview = quoted_text[:200] + "..." if len(quoted_text) > 200 else quoted_text
+            reply_prefix = f"{reply_link}\n> {quoted_preview}\n\n"
+        else:
+            reply_prefix = f"{reply_link}\n\n"
     elif reply_to_discord_id and (not discord_channel_id or not discord_guild_id):
         logger.warning(
             f"Cannot create reply link to Discord message {reply_to_discord_id}: "
@@ -436,6 +445,20 @@ async def handle_new_message(event):
         message_text = msg.text or msg.message or ""
         tg_msg_id    = msg.id
         tg_reply_to  = getattr(msg.reply_to, "reply_to_msg_id", None) if msg.reply_to else None
+        
+        # If this is a reply, fetch the original message to strip quoted text
+        quoted_text = None
+        if tg_reply_to is not None:
+            try:
+                replied_msg = await event.get_reply_message()
+                if replied_msg:
+                    quoted_text = replied_msg.text or replied_msg.message or ""
+                    # Strip the quoted text from the beginning of the message if present
+                    if quoted_text and message_text.startswith(quoted_text):
+                        message_text = message_text[len(quoted_text):].strip()
+                        logger.info(f"[{channel_name}] Stripped quoted text from reply ({len(quoted_text)} chars)")
+            except Exception as e:
+                logger.warning(f"[{channel_name}] Could not fetch reply message: {e}")
 
         # If the message has no text but has a WebPage media (link preview),
         # extract the URL so we don't silently drop link-only messages.
@@ -503,6 +526,7 @@ async def handle_new_message(event):
                 provider      = ai_provider,
                 model         = ai_model,
                 api_key       = ai_api_key,
+                is_reply      = (tg_reply_to is not None),
             )
             triage_action = triage.action
             triage_reason = triage.reason
@@ -522,6 +546,7 @@ async def handle_new_message(event):
             role_id,
             discord_channel_id,
             discord_guild_id,
+            quoted_text,
         )
 
         # Archive to DB

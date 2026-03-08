@@ -233,6 +233,7 @@ async def triage_message(
     provider: str,
     model: str,
     api_key: str,
+    is_reply: bool = False,
 ) -> TriageResult:
     """
     Two-pass AI pipeline:
@@ -241,11 +242,16 @@ async def triage_message(
 
     On any error (network, parse, etc.) the message is always forwarded
     unchanged so a failing AI never silently drops messages.
+    
+    Args:
+        is_reply: If True, indicates this is a reply/update to a previous message
     """
     if not message_text or not message_text.strip():
         return TriageResult("forward", "empty message, skipped triage", None)
 
-    user_prompt = f"Channel: {channel_name}\n\nMessage:\n{message_text}"
+    # Add context if this is a reply
+    reply_context = "\n[NOTE: This is a REPLY/UPDATE to a previous message, not a new signal]" if is_reply else ""
+    user_prompt = f"Channel: {channel_name}{reply_context}\n\nMessage:\n{message_text}"
 
     # ── Pass 1: Triage ────────────────────────────────────────────────────
     try:
