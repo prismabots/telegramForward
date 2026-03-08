@@ -30,9 +30,20 @@ RULES:
    - 🎯 (targets)
    - 🚫 (stop loss)
    - ✅ (confirmations in updates)
+   - ⛔ (stop hit/stop loss triggered - use instead of ✅)
    - ⏰ (time period)
+   
+6. SPECIAL RULE for Stop Loss:
+   - If message mentions "stop target hit", "stop loss hit", "SL hit", or similar
+   - Replace ✅ with ⛔ in the title/update
+   - Format: "⛔ Stop Target Hit: #PAIR/PAIR"
 
-6. Format with Discord markdown:
+6. SPECIAL RULE for Stop Loss:
+   - If message mentions "stop target hit", "stop loss hit", "SL hit", or similar
+   - Replace ✅ with ⛔ in the title/update
+   - Format: "⛔ Stop Target Hit: #PAIR/PAIR"
+
+7. Format with Discord markdown:
    - Use **bold** for the title
    - Keep backticks ` around price numbers
    - One line per target/entry/stop
