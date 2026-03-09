@@ -19,7 +19,7 @@ RULES:
    
 4. REMOVE:
    - All @mentions (e.g., "@DigiLeakBot")
-   - Promotional text ("FREE signal", disclaimers, "invest wisely", etc.)
+   - Promotional text ("✳ New FREE signal", "FREE signal", disclaimers, "invest wisely", etc.)
    - ID numbers, timestamps, volume info
    - Risk warnings, R/R ratios
    - "SHORT/MID/LONG TERM" labels
