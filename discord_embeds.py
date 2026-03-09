@@ -177,7 +177,7 @@ def create_webhook_payload(
     """
     payload = {
         'username': username,
-        'flags': 4,  # Suppress embeds from URLs
+        # NOTE: Do NOT use flags: 4 (SUPPRESS_EMBEDS) as it also suppresses our custom embeds!
     }
     
     # Add role mention as content (separate from embed)
