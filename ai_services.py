@@ -297,7 +297,7 @@ async def triage_message(
         async with aiohttp.ClientSession() as session:
             rewritten = await asyncio.wait_for(
                 _call_provider(session, message_text, format_prompt, provider, model, api_key),
-                timeout=35.0,
+                timeout=60.0,  # Increased for long messages with many trades
             )
         rewritten = rewritten.strip() or None
         logger.info(f"AI format [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
