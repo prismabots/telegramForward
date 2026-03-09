@@ -178,8 +178,11 @@ def create_webhook_payload(
     }
     
     # Add role mention as content (separate from embed)
+    # If no role_id, set empty content (Discord requires content or embed)
     if role_id:
         payload['content'] = f'<@&{role_id}>'
+    else:
+        payload['content'] = ''  # Empty content is valid when embed is present
     
     if use_embed:
         embed = build_embed(message_text, quoted_text)
