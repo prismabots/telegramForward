@@ -151,6 +151,38 @@ Reply threading is powered by the `messages` table — when a Telegram reply com
 
 ---
 
+## Automated Message Cleanup
+
+To keep the database size manageable, you can set up automated weekly cleanup that deletes message records older than 7 days (while preserving recent messages for reply threading).
+
+**Two options:**
+
+### Option 1: Server-Based Cleanup (Recommended)
+Best if your database has firewall rules (like DigitalOcean managed databases).
+
+📖 **See [DIGITALOCEAN_SETUP.md](DIGITALOCEAN_SETUP.md)** for step-by-step instructions.
+
+- ✅ One command to set up
+- ✅ Runs directly on your server (bypasses firewall)
+- ✅ Automatic weekly execution
+
+### Option 2: GitHub Actions (If DB is publicly accessible)
+Best if your database allows external connections.
+
+📖 **See [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)** for setup instructions.
+
+- ✅ No server access needed
+- ✅ Runs on GitHub's infrastructure
+- ✅ Requires adding database URL as GitHub secret
+
+**Manual cleanup anytime:**
+```bash
+python cleanup_old_messages.py --dry-run  # Preview
+python cleanup_old_messages.py            # Actually delete
+```
+
+---
+
 ## What gets forwarded
 
 - Text messages
