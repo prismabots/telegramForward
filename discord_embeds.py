@@ -2,7 +2,10 @@
 Discord embed builder for trading signals.
 """
 import re
+import logging
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 # Discord color codes (decimal)
@@ -187,6 +190,7 @@ def create_webhook_payload(
     if use_embed:
         embed = build_embed(message_text, quoted_text)
         payload['embeds'] = [embed]
+        logger.info(f"Built embed with title: {embed.get('title', 'N/A')[:50]}, color: {embed.get('color')}, fields: {len(embed.get('fields', []))}")
     else:
         # Fallback to plain text
         content = payload.get('content', '')

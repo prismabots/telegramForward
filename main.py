@@ -324,7 +324,15 @@ async def send_to_discord(
                 else:
                     payload['embeds'][0]['description'] = reply_text
             
+            # Debug: Log the payload
+            logger.info(f"Discord payload: {json.dumps(payload, indent=2)}")
+            
             response = requests.post(url, json=payload)
+            
+            # Debug: Log the response
+            logger.info(f"Discord response status: {response.status_code}")
+            if response.status_code != 200:
+                logger.error(f"Discord error response: {response.text}")
 
         response.raise_for_status()
         resp_json          = response.json()
