@@ -10,7 +10,8 @@ FORWARD the message if it contains:
 - Trade status updates with ticker symbols
 
 DISCARD the message if it contains:
-- Promotional content ("Join our VIP", "Subscribe now", etc.)
+- Promotional content ("Join our VIP", "Subscribe now", "Automate your Telegram", etc.)
+- Bot promotions or automation tool advertisements
 - General market commentary without specific signals
 - Greetings, motivational quotes, or filler
 - Spam, advertisements, or referral links
