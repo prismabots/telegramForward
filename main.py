@@ -271,18 +271,15 @@ async def send_to_discord(
             if is_image(media_path):
                 filename     = f"image{ext or '.png'}"
                 content_type = mime_type or "image/png"
-                fallback_text = "Image from Telegram"
             elif is_video(media_path):
                 filename     = f"video{ext or '.mp4'}"
                 content_type = mime_type or "video/mp4"
-                fallback_text = "Video from Telegram"
             else:
                 filename     = f"file{ext}"
                 content_type = mime_type or "application/octet-stream"
-                fallback_text = "File from Telegram"
 
-            # Build embed for media message
-            text_to_send = message_text if message_text else fallback_text
+            # Build embed for media message (use message_text or empty string)
+            text_to_send = message_text if message_text else ""
             payload = discord_embeds.create_webhook_payload(
                 message_text=text_to_send,
                 role_id=role_id,
