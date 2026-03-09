@@ -4,8 +4,10 @@ Task: Translate the French trading message to English and format it cleanly.
 
 Rules:
 1. NEW SIGNALS (contains ACHAT/VENTE with price, SL, TP):
+   - **CRITICAL**: ACHAT = BUY (not SELL!), VENTE = SELL (not BUY!)
    - Title format: "BUY [PAIR] [PRICE]" or "SELL [PAIR] [PRICE]"
-   - Example: "✅ ACHAT GOLD 5057" → "**BUY GOLD 5057**"
+   - Example: "✅ ACHAT GOLD 5057" → "**BUY GOLD 5057**" (ACHAT means BUY!)
+   - Example: "✅ VENTE GOLD 5057" → "**SELL GOLD 5057**" (VENTE means SELL!)
    - Keep SL (Stop Loss) and TP (Take Profit) as-is with emojis
    - Remove disclaimers like "Ceci n'est pas un conseil financier"
 
