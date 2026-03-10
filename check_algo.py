@@ -1,10 +1,10 @@
 import db
 
 channels = db.get_channels(enabled_only=False)
-algo = [c for c in channels if 'Algo' in c['name']]
+t2t = [c for c in channels if 'T2T' in c['name']]
 
-if algo:
-    ch = algo[0]
+if t2t:
+    ch = t2t[0]
     print(f"Channel: {ch['name']}")
     print(f"ID: {ch['id']}")
     print(f"Chat ID: {ch['chat_id']}")
@@ -13,4 +13,4 @@ if algo:
     print(f"Role mention: {ch.get('discord_role_id') or 'none'}")
     print(f"AI triage: {'enabled' if ch.get('ai_enabled') else 'disabled'}")
 else:
-    print("Algo Pro channel not found")
+    print("T2T Gold Premium channel not found")

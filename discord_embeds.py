@@ -116,10 +116,14 @@ def build_embed(message_text: str, quoted_text: Optional[str] = None) -> Dict[st
     """
     parsed = parse_trading_signal(message_text)
     
+    # Build embed - Discord requires either title or description
     embed = {
-        'title': parsed['title'],
         'color': parsed['color'],
     }
+    
+    # Only add title if it's not empty
+    if parsed['title']:
+        embed['title'] = parsed['title']
     
     # Add description (including quoted text if this is a reply)
     description_parts = []
@@ -134,6 +138,12 @@ def build_embed(message_text: str, quoted_text: Optional[str] = None) -> Dict[st
     
     if description_parts:
         embed['description'] = '\n'.join(description_parts)
+    
+    # Ensure embed has at least title or description (Discord requirement)
+    if not embed.get('title') and not embed.get('description'):
+        # Fallback: use first 200 chars of original message as description
+        logger.warning(f"Embed has no title or description, using message fallback. Message: {message_text[:100]}...")
+        embed['description'] = message_text[:200] + ('...' if len(message_text) > 200 else '')
     
     # Add fields
     if parsed['fields']:
@@ -190,7 +200,9 @@ def create_webhook_payload(
     if use_embed:
         embed = build_embed(message_text, quoted_text)
         payload['embeds'] = [embed]
-        logger.info(f"Built embed with title: {embed.get('title', 'N/A')[:50]}, color: {embed.get('color')}, fields: {len(embed.get('fields', []))}")
+        title_preview = embed.get('title', '(no title)')[:50] if embed.get('title') else '(no title)'
+        desc_preview = embed.get('description', '')[:30] + '...' if embed.get('description') else '(no desc)'
+        logger.info(f"Built embed - title: {title_preview}, desc: {desc_preview}, color: {embed.get('color')}, fields: {len(embed.get('fields', []))}")
     else:
         # Fallback to plain text
         content = payload.get('content', '')

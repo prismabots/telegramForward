@@ -26,6 +26,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Verbose logging control - only these channels get detailed logs
+# ---------------------------------------------------------------------------
+VERBOSE_CHANNELS = [13, 14]  # Control Optional SPX, Algo Pro
+
+def should_log_verbose(channel_id: int) -> bool:
+    """Check if this channel should have verbose logging."""
+    return channel_id in VERBOSE_CHANNELS
+
+# ---------------------------------------------------------------------------
 # Database init + load all config
 # ---------------------------------------------------------------------------
 
@@ -480,7 +489,8 @@ async def handle_new_message(event):
                     # Strip the quoted text from the beginning of the message if present
                     if quoted_text and message_text.startswith(quoted_text):
                         message_text = message_text[len(quoted_text):].strip()
-                        logger.info(f"[{channel_name}] Stripped quoted text from reply ({len(quoted_text)} chars)")
+                        if should_log_verbose(db_channel_id):
+                            logger.info(f"[{channel_name}] Stripped quoted text from reply ({len(quoted_text)} chars)")
             except Exception as e:
                 logger.warning(f"[{channel_name}] Could not fetch reply message: {e}")
 
@@ -553,7 +563,8 @@ async def handle_new_message(event):
             for disclaimer in disclaimers:
                 if disclaimer in message_text:
                     message_text = message_text.replace(disclaimer, "").strip()
-                    logger.info(f"[{channel_name}] Removed French disclaimer (pre-AI)")
+                    if should_log_verbose(db_channel_id):
+                        logger.info(f"[{channel_name}] Removed French disclaimer (pre-AI)")
                     break
         
         if ai_enabled and ai_api_key and message_text:
@@ -573,7 +584,8 @@ async def handle_new_message(event):
                 message_text = triage.rewritten_text
 
         if triage_action == "discard":
-            logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
+            if should_log_verbose(db_channel_id):
+                logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
             return
 
         # Send to Discord
