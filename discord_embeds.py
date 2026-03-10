@@ -171,6 +171,8 @@ def create_webhook_payload(
     quoted_text: Optional[str] = None,
     username: str = "Telegram Forward",
     use_embed: bool = True,
+    channel_id: Optional[int] = None,
+    verbose_logging: bool = True,
 ) -> Dict[str, Any]:
     """
     Create a Discord webhook payload with optional embed.
@@ -200,9 +202,10 @@ def create_webhook_payload(
     if use_embed:
         embed = build_embed(message_text, quoted_text)
         payload['embeds'] = [embed]
-        title_preview = embed.get('title', '(no title)')[:50] if embed.get('title') else '(no title)'
-        desc_preview = embed.get('description', '')[:30] + '...' if embed.get('description') else '(no desc)'
-        logger.info(f"Built embed - title: {title_preview}, desc: {desc_preview}, color: {embed.get('color')}, fields: {len(embed.get('fields', []))}")
+        if verbose_logging:
+            title_preview = embed.get('title', '(no title)')[:50] if embed.get('title') else '(no title)'
+            desc_preview = embed.get('description', '')[:30] + '...' if embed.get('description') else '(no desc)'
+            logger.info(f"Built embed - title: {title_preview}, desc: {desc_preview}, color: {embed.get('color')}, fields: {len(embed.get('fields', []))}")
     else:
         # Fallback to plain text
         content = payload.get('content', '')

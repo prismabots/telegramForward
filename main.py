@@ -244,6 +244,7 @@ async def send_to_discord(
     discord_channel_id: str | None = None,
     discord_guild_id: str | None = None,
     quoted_text: str | None = None,
+    channel_id: int | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -295,6 +296,8 @@ async def send_to_discord(
                 quoted_text=quoted_text,
                 username=bot_username,
                 use_embed=True,
+                channel_id=channel_id,
+                verbose_logging=(channel_id is not None and should_log_verbose(channel_id)),
             )
             
             # Add reply link to embed if available
@@ -319,6 +322,8 @@ async def send_to_discord(
                 quoted_text=quoted_text,
                 username=bot_username,
                 use_embed=True,
+                channel_id=channel_id,
+                verbose_logging=(channel_id is not None and should_log_verbose(channel_id)),
             )
             
             # Add reply link to embed if available
@@ -331,19 +336,22 @@ async def send_to_discord(
                     payload['embeds'][0]['description'] = reply_text
             
             # Debug: Log the payload
-            logger.info(f"Discord payload: {json.dumps(payload, indent=2)}")
+            if channel_id is not None and should_log_verbose(channel_id):
+                logger.info(f"Discord payload: {json.dumps(payload, indent=2)}")
             
             response = requests.post(url, json=payload)
             
             # Debug: Log the response
-            logger.info(f"Discord response status: {response.status_code}")
+            if channel_id is not None and should_log_verbose(channel_id):
+                logger.info(f"Discord response status: {response.status_code}")
             if response.status_code != 200:
                 logger.error(f"Discord error response: {response.text}")
 
         response.raise_for_status()
         resp_json          = response.json()
         discord_message_id = str(resp_json.get("id", ""))
-        logger.info(f"Sent to Discord — discord_message_id={discord_message_id}")
+        if channel_id is not None and should_log_verbose(channel_id):
+            logger.info(f"Sent to Discord — discord_message_id={discord_message_id}")
         
         # Return the original text for logging
         return discord_message_id or None, message_text
@@ -577,6 +585,8 @@ async def handle_new_message(event):
                 model         = ai_model,
                 api_key       = ai_api_key,
                 is_reply      = (tg_reply_to is not None),
+                channel_id    = db_channel_id,
+                verbose_logging = should_log_verbose(db_channel_id),
             )
             triage_action = triage.action
             triage_reason = triage.reason
@@ -598,6 +608,7 @@ async def handle_new_message(event):
             discord_channel_id,
             discord_guild_id,
             quoted_text,
+            db_channel_id,
         )
 
         # Archive to DB
@@ -621,9 +632,10 @@ async def handle_new_message(event):
         )
 
         if discord_message_id:
-            logger.info(
-                f"Forwarded message from '{channel_name}' → Discord ({discord_message_id})"
-            )
+            if should_log_verbose(db_channel_id):
+                logger.info(
+                    f"Forwarded message from '{channel_name}' → Discord ({discord_message_id})"
+                )
         else:
             logger.warning(
                 f"Message from '{channel_name}' archived but Discord send failed."

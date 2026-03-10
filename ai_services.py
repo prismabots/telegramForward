@@ -234,6 +234,8 @@ async def triage_message(
     model: str,
     api_key: str,
     is_reply: bool = False,
+    channel_id: int | None = None,
+    verbose_logging: bool = True,
 ) -> TriageResult:
     """
     Two-pass AI pipeline:
@@ -276,7 +278,8 @@ async def triage_message(
             logger.warning(f"AI triage returned unexpected action '{action}', defaulting to forward")
             action = "forward"
 
-        logger.info(f"AI triage [{channel_name}]: {action} — {reason}")
+        if verbose_logging:
+            logger.info(f"AI triage [{channel_name}]: {action} — {reason}")
 
     except asyncio.TimeoutError:
         logger.warning(f"AI triage timed out for '{channel_name}' — forwarding original")
@@ -300,7 +303,8 @@ async def triage_message(
                 timeout=60.0,  # Increased for long messages with many trades
             )
         rewritten = rewritten.strip() or None
-        logger.info(f"AI format [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
+        if verbose_logging:
+            logger.info(f"AI format [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
 
     except asyncio.TimeoutError:
         logger.warning(f"AI format timed out for '{channel_name}' — using original text")
