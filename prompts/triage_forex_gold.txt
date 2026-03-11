@@ -20,14 +20,17 @@ REJECT only these:
 - Pure educational content (no active trade mentioned)
 - General market commentary (no specific trade)
 - Questions or discussions
-- Pure promotional spam with NO trade reference
+- Promotional messages (congratulations, welcome messages, join premium, etc.)
+- Generic motivational content ("Well done", "Good job", "Keep it up")
 - Messages with no currency pair or gold mention
 
 CRITICAL RULES:
-- If message mentions Gold/XAUUSD or currency pairs = ACCEPT (even with promo text)
 - "SL hit" or "TP hit" = ACCEPT (important status updates)
 - "Closed +XXX Pips" = ACCEPT (performance tracking)
-- When uncertain = ACCEPT (err on the side of forwarding)
+- Must have BOTH: (1) currency/gold mention AND (2) trading action/status
+- Promotional text WITHOUT trading signal = REJECT
+- "Well done", "Congratulations" with no trade details = REJECT
+- When uncertain = REJECT (err on the side of filtering)
 
 Return a JSON object with this structure:
 {
@@ -35,7 +38,11 @@ Return a JSON object with this structure:
   "reason": "brief explanation"
 }
 
-Use "forward" if the message contains a valid trading signal.
-Use "discard" if it should be filtered out.
+Use "forward" if the message contains a valid trading signal OR status update.
+Use "discard" if it's promotional, motivational, or has no trading information.
 
-Be strict: when in doubt, use "discard".
+Examples:
+- "Well done to all FT-PRO Academy members!" → discard (promotional, no trade)
+- "Gold sell @ 5169.70" → forward (valid signal)
+- "Gold TP hit" → forward (status update)
+- "Congratulations on the profits!" → discard (motivational, no specific trade)

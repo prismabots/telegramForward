@@ -2,6 +2,10 @@
 Apply FOREX/Gold AI prompts to multiple channels at once.
 """
 import db
+from load_env import load_environment
+
+# Load environment variables
+load_environment()
 
 # Read the prompt files
 with open('prompts/triage_forex_gold.txt', 'r', encoding='utf-8') as f:
