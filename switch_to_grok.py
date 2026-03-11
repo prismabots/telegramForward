@@ -1,5 +1,5 @@
 """
-Switch AI provider to Grok-4.1-fast
+Switch AI provider to Grok-4-1-fast-reasoning
 
 This script updates the global AI settings to use xAI's Grok model
 for better Arabic→English translation and instruction following.
@@ -11,7 +11,7 @@ import os
 load_environment()
 
 print("\n" + "="*60)
-print("SWITCHING TO GROK-4.1-FAST")
+print("SWITCHING TO GROK-4-1-FAST-REASONING")
 print("="*60)
 
 # Check for X_API_KEY
@@ -30,17 +30,17 @@ else:
 # Update settings
 try:
     db.set_setting("ai_provider", "grok")
-    db.set_setting("ai_model", "grok-4.1-fast")
+    db.set_setting("ai_model", "grok-4-1-fast-reasoning")
     if x_api_key:
         db.set_setting("ai_api_key", x_api_key)
         print("\n✅ AI settings updated:")
         print("   Provider: grok")
-        print("   Model:    grok-4.1-fast")
+        print("   Model:    grok-4-1-fast-reasoning")
         print("   API Key:  [updated]")
     else:
         print("\n✅ AI settings updated:")
         print("   Provider: grok")
-        print("   Model:    grok-4.1-fast")
+        print("   Model:    grok-4-1-fast-reasoning")
         print("   API Key:  [keeping existing key from DB]")
     
     # Verify
@@ -57,8 +57,8 @@ try:
     print("1. Bot will auto-reload settings on next message")
     print("2. Send a test message with Arabic content")
     print("3. Check if translation is now 100% English")
-    print("\nIf issues persist, we can try:")
-    print("- grok-4.1 (non-fast, more accurate)")
+    print("\nOther available models:")
+    print("- grok-4-1-reasoning (non-fast, more accurate)")
     print("- sonar (alternative provider)")
     
 except Exception as e:
