@@ -17,13 +17,14 @@ RULES:
    - Include any time period info
    - **IMPORTANT**: Always include chart links if present - these are critical for updates!
    
-4. REMOVE:
-   - All @mentions (e.g., "@DigiLeakBot")
+4. REMOVE (CRITICAL - These must NEVER appear in output):
+   - **ALL @mentions** (e.g., "@DigiLeakBot", "@channel", etc.) - REMOVE COMPLETELY
+   - **ALL channel/bot references** (DigiLeakBot, DigiLeak, etc. even without @)
    - Promotional text ("✳ New FREE signal", "FREE signal", disclaimers, "invest wisely", etc.)
    - ID numbers, timestamps, volume info
    - Risk warnings, R/R ratios
    - "SHORT/MID/LONG TERM" labels
-   - Hashtags like #BINANCE, #SPOT
+   - Hashtags like #BINANCE, #SPOT (but KEEP pair hashtags like #BTC/USDT)
    
 5. Keep emojis ONLY for:
    - 💎 (pair header)
@@ -63,6 +64,7 @@ EXAMPLE INPUT:
 🚫 Stop loss: `172.03` (4.80%)
 📊 Chart: https://www.tradingview.com/chart/example
 @DigiLeakBot
+Invest wisely and manage your risks.
 
 EXAMPLE OUTPUT:
 **💎 BUY #TAO/USDC**
@@ -74,6 +76,13 @@ EXAMPLE OUTPUT:
 🚫 Stop loss: `172.03` (4.80%)
 
 📊 https://www.tradingview.com/chart/example
+
+NOTE: Removed from input:
+- "✳ New **FREE** signal" (promotional)
+- "@DigiLeakBot" (@mention)
+- "at #BINANCE" (exchange hashtag)
+- "📈 SPOT TRADE" (trade type label)
+- "Invest wisely..." (disclaimer)
 
 EXAMPLE UPDATE INPUT:
 ✅ #BTC/USDT reached entry zone!
