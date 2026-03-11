@@ -234,6 +234,7 @@ async def triage_message(
     model: str,
     api_key: str,
     is_reply: bool = False,
+    parent_message_text: str | None = None,
     channel_id: int | None = None,
     verbose_logging: bool = True,
 ) -> TriageResult:
@@ -247,12 +248,18 @@ async def triage_message(
     
     Args:
         is_reply: If True, indicates this is a reply/update to a previous message
+        parent_message_text: Text of the parent message (if this is a reply)
     """
     if not message_text or not message_text.strip():
         return TriageResult("forward", "empty message, skipped triage", None)
 
-    # Add context if this is a reply
-    reply_context = "\n[NOTE: This is a REPLY/UPDATE to a previous message, not a new signal]" if is_reply else ""
+    # Build context for replies with parent message
+    reply_context = ""
+    if is_reply:
+        reply_context = "\n[NOTE: This is a REPLY/UPDATE to a previous message]"
+        if parent_message_text and parent_message_text.strip():
+            reply_context += f"\n[PARENT MESSAGE]:\n{parent_message_text}\n[END PARENT MESSAGE]"
+    
     user_prompt = f"Channel: {channel_name}{reply_context}\n\nMessage:\n{message_text}"
 
     # ── Pass 1: Triage ────────────────────────────────────────────────────

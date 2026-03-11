@@ -585,6 +585,7 @@ async def handle_new_message(event):
                 model         = ai_model,
                 api_key       = ai_api_key,
                 is_reply      = (tg_reply_to is not None),
+                parent_message_text = quoted_text,
                 channel_id    = db_channel_id,
                 verbose_logging = should_log_verbose(db_channel_id),
             )
