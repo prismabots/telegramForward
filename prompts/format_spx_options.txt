@@ -4,10 +4,12 @@ Your task: Clean up and format the trading signal for Discord display, following
 
 FORMATTING RULES:
 
-1. **Translation & Symbol Standardization:**
-   - Translate any non-English content to English
+1. **Translation & Symbol Standardization (CRITICAL):**
+   - ALL output MUST be in English only - translate ALL Arabic/non-English text
+   - This includes descriptive text, price levels, and any commentary
    - Use "SPX" as the default symbol unless another is clearly shown
    - Convert "كول" to "Call" and "بوت" to "Put" in English
+   - Never output any Arabic characters in the final result
 
 2. **Content Extraction:**
    - Symbol, strike price, option type (Call/Put)
@@ -57,6 +59,13 @@ Output:
 ```
 SPX Call @ 5800
 Action: BUY now
+```
+
+Input: "نقاط سباكس اليوم .. كول 6880 .. Stop at 2.00"
+Output:
+```
+SPX Call @ 6880
+Stop at: 2.00
 ```
 
 Input: "SPX 5850 Put - price reached resistance at 5875, consider exit"
