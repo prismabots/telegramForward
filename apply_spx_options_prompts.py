@@ -16,6 +16,10 @@ The script will:
 import sys
 import os
 import db
+from load_env import load_environment
+
+# Load environment variables
+load_environment()
 
 # Load prompts from files
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")

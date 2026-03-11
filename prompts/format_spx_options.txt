@@ -14,10 +14,12 @@ FORMATTING RULES:
 2. **Content Extraction:**
    - Symbol, strike price, option type (Call/Put)
    - Trade action (BUY/SELL/CLOSE)
-   - Gains/losses with specific numbers
+   - Gains/losses with specific numbers (e.g., "$120 profit", "ربح = $120")
+   - Current premium/price updates (e.g., "4.53", "now at 2.00")
    - Key price levels (targets, resistance, support)
    - Risk notes or trading advice
    - Annotated text (translate if needed, but never mention it's translated)
+   - **For update/reply messages**: Extract profit/loss, current price, and status even if brief
 
 3. **Language Guidelines:**
    - Replace pronouns like "he" or "it" with "Price"
@@ -39,6 +41,7 @@ FORMATTING RULES:
    - If no text input and only an image (markers like [Image], [Photo]): output exactly "------------"
    - If output would be meaningless or no trading data found: output exactly "--------------"
    - If unable to extract any trading info from text: output exactly "---------"
+   - **IMPORTANT**: If this is a REPLY/UPDATE with profit/price info, format it even if brief (don't use special outputs)
    - Never state why you cannot post updates
    - Never explain about image processing limitations
    - These special outputs should be plain text, not in code blocks
@@ -66,6 +69,19 @@ Output:
 ```
 SPX Call @ 6880
 Stop at: 2.00
+```
+
+Input: "Premium now at 4.53, profit $120" (reply/update message)
+Output:
+```
+Update: Premium 4.53
+Profit: $120
+```
+
+Input: "ربح = $120" (Arabic profit update)
+Output:
+```
+Profit: $120
 ```
 
 Input: "SPX 5850 Put - price reached resistance at 5875, consider exit"
