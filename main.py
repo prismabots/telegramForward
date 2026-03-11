@@ -600,6 +600,8 @@ async def handle_new_message(event):
             return
 
         # Send to Discord
+        # Note: Don't pass quoted_text if AI is enabled - the AI already processed
+        # and translated everything, so showing raw quoted text would include untranslated content
         discord_message_id, discord_text_sent = await send_to_discord(
             webhook_url,
             message_text,
@@ -608,7 +610,7 @@ async def handle_new_message(event):
             role_id,
             discord_channel_id,
             discord_guild_id,
-            quoted_text,
+            quoted_text if not ai_enabled else None,  # Suppress quoted text for AI channels
             db_channel_id,
         )
 
