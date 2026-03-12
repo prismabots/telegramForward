@@ -359,7 +359,25 @@ async def send_to_discord(
         return discord_message_id or None, message_text
 
     except Exception as e:
-        logger.error(f"Failed to send message to Discord: {e}")
+        # Log additional context for debugging Discord 400/Bad Request errors.
+        try:
+            if 'url' in locals() and isinstance(url, str) and '/webhooks/' in url:
+                masked_webhook = url.split('/webhooks/')[0] + '/webhooks/...'
+            else:
+                masked_webhook = '(<webhook masked>)'
+        except Exception:
+            masked_webhook = '(<webhook masked>)'
+
+        try:
+            payload_preview = json.dumps(payload)[:1000] if 'payload' in locals() else None
+        except Exception:
+            payload_preview = '<could not serialize payload>'
+
+        logger.error(
+            f"Failed to send message to Discord: {e}. Webhook: {masked_webhook}. "
+            f"Payload preview: {payload_preview}",
+            exc_info=True,
+        )
         return None, None
     finally:
         if media_path and os.path.exists(media_path):

@@ -201,6 +201,12 @@ def create_webhook_payload(
     
     if use_embed:
         embed = build_embed(message_text, quoted_text)
+        # Sanitize embed to conform to Discord API limits (avoid 400 errors)
+        try:
+            embed = _sanitize_embed_for_discord(embed)
+        except Exception:
+            # If sanitizer fails for some reason, continue with original embed
+            logger.exception("Embed sanitization failed")
         payload['embeds'] = [embed]
         if verbose_logging:
             title_preview = embed.get('title', '(no title)')[:50] if embed.get('title') else '(no title)'
@@ -215,3 +221,56 @@ def create_webhook_payload(
         payload['content'] = content
     
     return payload
+
+
+def _sanitize_embed_for_discord(embed: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Truncate embed fields to Discord limits to avoid 400 Bad Request errors.
+
+    Limits (Discord API):
+      - title: 256 chars
+      - description: 4096 chars
+      - fields: max 25 fields
+      - field name: 256 chars
+      - field value: 1024 chars
+      - footer.text: 2048 chars
+    """
+    if not isinstance(embed, dict):
+        return embed
+
+    def _t(s, n):
+        try:
+            if s is None:
+                return s
+            s = str(s)
+            return s if len(s) <= n else s[:n-3] + "..."
+        except Exception:
+            return str(s)
+
+    # Title/description/color
+    if 'title' in embed:
+        embed['title'] = _t(embed.get('title', ''), 256)
+    if 'description' in embed:
+        embed['description'] = _t(embed.get('description', ''), 4096)
+    # Color should be int; leave as-is
+
+    # Fields
+    fields = embed.get('fields') or []
+    if isinstance(fields, list):
+        # Trim to max 25
+        fields = fields[:25]
+        sanitized = []
+        for f in fields:
+            if not isinstance(f, dict):
+                continue
+            name = _t(f.get('name', ''), 256)
+            value = _t(f.get('value', ''), 1024)
+            inline = bool(f.get('inline', False))
+            sanitized.append({'name': name, 'value': value, 'inline': inline})
+        embed['fields'] = sanitized
+
+    # Footer
+    if 'footer' in embed and isinstance(embed['footer'], dict):
+        embed['footer']['text'] = _t(embed['footer'].get('text', ''), 2048)
+
+    return embed
