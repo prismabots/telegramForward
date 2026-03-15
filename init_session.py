@@ -5,15 +5,21 @@ Session initializer for DigitalOcean App Platform.
 This script runs BEFORE main.py and creates the session if it doesn't exist
 or is invalid. It uses environment variables for authentication.
 
-Required environment variables:
-- TELEGRAM_PHONE: Phone number (e.g., +1234567890)
-- TELEGRAM_CODE: Verification code (optional, for initial setup)
-- TELEGRAM_PASSWORD: 2FA password (optional, if 2FA is enabled)
+Supports two modes:
+1. String session (RECOMMENDED): Set TELEGRAM_SESSION_STRING env var
+2. File session: Uses TELEGRAM_PHONE + TELEGRAM_CODE (needs manual intervention)
+
+Environment variables:
+- TELEGRAM_SESSION_STRING: Pre-generated session string (recommended)
+- TELEGRAM_PHONE: Phone number (fallback if no string session)
+- TELEGRAM_CODE: Verification code (fallback, for initial setup)
+- TELEGRAM_PASSWORD: 2FA password (fallback, if 2FA is enabled)
 """
 import os
 import sys
 import asyncio
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, AuthKeyDuplicatedError
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +44,45 @@ async def init_session():
     api_hash = settings.get("telegram_api_hash")
     session_name = settings.get("telegram_session_name", "anon")
     
+    # Check for string session (RECOMMENDED)
+    session_string = os.environ.get("TELEGRAM_SESSION_STRING")
+    
+    if session_string:
+        print("Using STRING SESSION mode (recommended)")
+        print()
+        
+        # Use string session
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        
+        try:
+            await client.connect()
+            
+            if await client.is_user_authorized():
+                me = await client.get_me()
+                print(f"✓ Session valid - logged in as: {me.first_name} (@{me.username})")
+                await client.disconnect()
+                return True
+            else:
+                print("❌ String session invalid - needs regeneration")
+                print("Run: python generate_string_session.py")
+                await client.disconnect()
+                return False
+                
+        except AuthKeyDuplicatedError:
+            print("❌ String session duplicated - needs regeneration")
+            print("Run: python generate_string_session.py")
+            await client.disconnect()
+            return False
+            
+        except Exception as e:
+            print(f"❌ Error with string session: {e}")
+            await client.disconnect()
+            return False
+    
+    # Fallback to file-based session
+    print("Using FILE SESSION mode (not recommended for App Platform)")
+    print()
+    
     phone = os.environ.get("TELEGRAM_PHONE")
     code = os.environ.get("TELEGRAM_CODE")
     password = os.environ.get("TELEGRAM_PASSWORD")
@@ -46,7 +91,6 @@ async def init_session():
     
     print(f"Session file: {session_file}")
     print(f"Phone: {phone if phone else 'Not set'}")
-    print(f"API ID: {api_id}")
     print()
     
     client = TelegramClient(session_name, api_id, api_hash)
