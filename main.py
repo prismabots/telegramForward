@@ -1,4 +1,5 @@
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from telethon.tl.functions.messages import CheckChatInviteRequest
 from telethon.tl.types import MessageMediaWebPage, WebPage
 import requests
@@ -202,7 +203,15 @@ channel_webhook_map: dict[int, dict] = {}
 # ---------------------------------------------------------------------------
 # Telegram client
 # ---------------------------------------------------------------------------
-client = TelegramClient(session_name, api_id, api_hash)
+
+# Support both string session (recommended for App Platform) and file session
+session_string = os.environ.get("TELEGRAM_SESSION_STRING")
+if session_string:
+    logger.info("Using Telegram STRING SESSION (from environment)")
+    client = TelegramClient(StringSession(session_string), api_id, api_hash)
+else:
+    logger.info(f"Using Telegram FILE SESSION: {session_name}.session")
+    client = TelegramClient(session_name, api_id, api_hash)
 
 
 # ---------------------------------------------------------------------------
