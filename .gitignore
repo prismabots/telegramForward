@@ -1,9 +1,10 @@
 # Sensitive config - never commit real credentials
 config.json
 
-# Telethon session files
-*.session
-*.session-journal
+# Telethon session files - TEMPORARILY DISABLED TO COMMIT SESSION
+# *.session
+# *.session-journal
+# TODO: Re-enable after session is deployed
 
 # Python
 __pycache__/
