@@ -146,6 +146,48 @@ BEGIN
     END IF;
 END $$;
 
+-- Idempotent: add ai_provider and ai_model for per-channel AI configuration
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_provider'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_provider TEXT;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_model'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_model TEXT;
+    END IF;
+END $$;
+
+-- Idempotent: add ai_fallback_provider and ai_fallback_model for resilience
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_fallback_provider'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_fallback_provider TEXT;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ai_fallback_model'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ai_fallback_model TEXT;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS tele_messages (
     id                   SERIAL      PRIMARY KEY,
     channel_id           INTEGER     NOT NULL REFERENCES tele_channels(id) ON DELETE CASCADE,
@@ -316,9 +358,13 @@ def add_channel(
 def update_channel(channel_id: int, **kwargs) -> dict | None:
     """
     Update one or more columns on a channel row.
-    Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id
+    Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id,
+                     ai_enabled, ai_triage_prompt, ai_format_prompt, ai_provider, ai_model,
+                     ai_fallback_provider, ai_fallback_model
     """
-    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", "ai_enabled", "ai_triage_prompt", "ai_format_prompt"}
+    allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", 
+               "ai_enabled", "ai_triage_prompt", "ai_format_prompt", "ai_provider", "ai_model",
+               "ai_fallback_provider", "ai_fallback_model"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None

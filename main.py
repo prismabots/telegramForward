@@ -183,17 +183,19 @@ for ch in db_channels:
     )
     
     channel_configs[ch["chat_id"]] = {
-        "webhook":            webhook_url,
-        "name":               channel_name,
-        "db_id":              ch["id"],
-        "role_id":            ch.get("discord_role_id"),
-        "discord_channel_id": discord_channel_id,
-        "discord_guild_id":   discord_guild_id,
-        "ai_enabled":         ch.get("ai_enabled", False),
-        "ai_triage_prompt":   ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
-        "ai_format_prompt":   ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
-        "ai_provider":        ch.get("ai_provider"),  # Per-channel AI provider override
-        "ai_model":           ch.get("ai_model"),     # Per-channel AI model override
+        "webhook":                webhook_url,
+        "name":                   channel_name,
+        "db_id":                  ch["id"],
+        "role_id":                ch.get("discord_role_id"),
+        "discord_channel_id":     discord_channel_id,
+        "discord_guild_id":       discord_guild_id,
+        "ai_enabled":             ch.get("ai_enabled", False),
+        "ai_triage_prompt":       ch.get("ai_triage_prompt") or DEFAULT_TRIAGE_PROMPT,
+        "ai_format_prompt":       ch.get("ai_format_prompt") or DEFAULT_FORMAT_PROMPT,
+        "ai_provider":            ch.get("ai_provider"),  # Per-channel AI provider override
+        "ai_model":               ch.get("ai_model"),     # Per-channel AI model override
+        "ai_fallback_provider":   ch.get("ai_fallback_provider"),  # Fallback provider for resilience
+        "ai_fallback_model":      ch.get("ai_fallback_model"),     # Fallback model for resilience
     }
 
 # channel_webhook_map: numeric Telegram channel ID -> {webhook, name, db_id}
@@ -511,8 +513,20 @@ async def handle_new_message(event):
         # Per-channel AI settings (use channel-specific if set, otherwise fall back to global)
         channel_ai_provider = cfg.get("ai_provider")
         channel_ai_model    = cfg.get("ai_model")
+        channel_ai_fallback_provider = cfg.get("ai_fallback_provider")
+        channel_ai_fallback_model = cfg.get("ai_fallback_model")
+        
         use_provider = channel_ai_provider if channel_ai_provider else ai_provider
         use_model    = channel_ai_model if channel_ai_model else ai_model
+        use_fallback_provider = channel_ai_fallback_provider
+        use_fallback_model = channel_ai_fallback_model
+        
+        # Get API key for the fallback provider (if configured)
+        use_fallback_api_key = ""
+        if use_fallback_provider:
+            use_fallback_api_key = (
+                os.environ.get(_AI_KEY_ENV_MAP.get(use_fallback_provider, ""), "")
+            )
 
         if not discord_channel_id or not discord_guild_id:
             logger.warning(
@@ -625,6 +639,9 @@ async def handle_new_message(event):
                 parent_message_text = quoted_text,
                 channel_id    = db_channel_id,
                 verbose_logging = should_log_verbose(db_channel_id),
+                fallback_provider = use_fallback_provider,  # Fallback provider for resilience
+                fallback_model = use_fallback_model,        # Fallback model for resilience
+                fallback_api_key = use_fallback_api_key,    # Fallback API key
             )
             triage_action = triage.action
             triage_reason = triage.reason

@@ -237,18 +237,25 @@ async def triage_message(
     parent_message_text: str | None = None,
     channel_id: int | None = None,
     verbose_logging: bool = True,
+    fallback_provider: str | None = None,
+    fallback_model: str | None = None,
+    fallback_api_key: str | None = None,
 ) -> TriageResult:
     """
-    Two-pass AI pipeline:
+    Two-pass AI pipeline with automatic fallback:
       Pass 1 — Triage: decide "forward" or "discard" using triage_prompt.
       Pass 2 — Format: rewrite the approved message using format_prompt.
 
-    On any error (network, parse, etc.) the message is always forwarded
-    unchanged so a failing AI never silently drops messages.
+    If the primary provider fails, automatically retries with the fallback provider.
+    On any error after retries, the message is forwarded unchanged so a failing AI 
+    never silently drops messages.
     
     Args:
         is_reply: If True, indicates this is a reply/update to a previous message
         parent_message_text: Text of the parent message (if this is a reply)
+        fallback_provider: Secondary AI provider to use if primary fails
+        fallback_model: Model to use with fallback provider
+        fallback_api_key: API key for fallback provider
     """
     if not message_text or not message_text.strip():
         return TriageResult("forward", "empty message, skipped triage", None)
@@ -263,6 +270,7 @@ async def triage_message(
     user_prompt = f"Channel: {channel_name}{reply_context}\n\nMessage:\n{message_text}"
 
     # ── Pass 1: Triage ────────────────────────────────────────────────────
+    triage_error = None
     try:
         async with aiohttp.ClientSession() as session:
             raw = await asyncio.wait_for(
@@ -288,21 +296,65 @@ async def triage_message(
         if verbose_logging:
             logger.info(f"AI triage [{channel_name}]: {action} — {reason}")
 
-    except asyncio.TimeoutError:
-        logger.warning(f"AI triage timed out for '{channel_name}' — forwarding original")
-        return TriageResult("forward", "triage timed out", None)
+    except asyncio.TimeoutError as e:
+        triage_error = f"triage timeout ({provider})"
+        logger.warning(f"AI triage timed out for '{channel_name}' [{provider}] — attempting fallback")
     except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"AI triage invalid JSON for '{channel_name}': {e} — forwarding original")
-        return TriageResult("forward", f"invalid triage response: {e}", None)
+        triage_error = f"invalid JSON ({provider}): {e}"
+        logger.warning(f"AI triage invalid JSON for '{channel_name}' [{provider}]: {e} — attempting fallback")
     except Exception as e:
-        logger.error(f"AI triage error for '{channel_name}': {e} — forwarding original")
-        return TriageResult("forward", f"triage error: {e}", None)
+        triage_error = f"error ({provider}): {e}"
+        logger.error(f"AI triage error for '{channel_name}' [{provider}]: {e} — attempting fallback")
+
+    # Try fallback if primary failed AND we have a fallback configured
+    if triage_error and fallback_provider and fallback_model and fallback_api_key:
+        logger.info(f"[{channel_name}] Falling back to {fallback_provider} for triage (reason: {triage_error})")
+        try:
+            async with aiohttp.ClientSession() as session:
+                raw = await asyncio.wait_for(
+                    _call_provider(session, user_prompt, triage_prompt, fallback_provider, fallback_model, fallback_api_key),
+                    timeout=35.0,
+                )
+
+            clean = raw.strip()
+            if clean.startswith("```"):
+                clean = clean.split("```")[1]
+                if clean.startswith("json"):
+                    clean = clean[4:]
+                clean = clean.strip()
+
+            data   = json.loads(clean)
+            action = str(data.get("action", "forward")).lower()
+            reason = str(data.get("reason", ""))
+
+            if action not in ("forward", "discard"):
+                logger.warning(f"AI triage (fallback) returned unexpected action '{action}', defaulting to forward")
+                action = "forward"
+
+            if verbose_logging:
+                logger.info(f"AI triage [{channel_name}] (FALLBACK {fallback_provider}): {action} — {reason}")
+            triage_error = None  # Clear error since fallback succeeded
+
+        except asyncio.TimeoutError:
+            logger.warning(f"AI triage fallback also timed out for '{channel_name}' [{fallback_provider}] — forwarding original")
+            return TriageResult("forward", f"triage failed: {triage_error}; fallback timed out", None)
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"AI triage fallback invalid JSON for '{channel_name}' [{fallback_provider}]: {e} — forwarding original")
+            return TriageResult("forward", f"triage failed: {triage_error}; fallback parse error: {e}", None)
+        except Exception as e:
+            logger.error(f"AI triage fallback error for '{channel_name}' [{fallback_provider}]: {e} — forwarding original")
+            return TriageResult("forward", f"triage failed: {triage_error}; fallback error: {e}", None)
+    elif triage_error:
+        # Primary failed but no fallback available
+        logger.warning(f"AI triage failed and no fallback configured for '{channel_name}' — forwarding original")
+        return TriageResult("forward", f"triage error: {triage_error}", None)
 
     if action == "discard":
         return TriageResult("discard", reason, None)
 
     # ── Pass 2: Format ────────────────────────────────────────────────────
     rewritten: str | None = None
+    format_error = None
     try:
         async with aiohttp.ClientSession() as session:
             rewritten = await asyncio.wait_for(
@@ -313,9 +365,33 @@ async def triage_message(
         if verbose_logging:
             logger.info(f"AI format [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
 
-    except asyncio.TimeoutError:
-        logger.warning(f"AI format timed out for '{channel_name}' — using original text")
+    except asyncio.TimeoutError as e:
+        format_error = f"timeout ({provider})"
+        logger.warning(f"AI format timed out for '{channel_name}' [{provider}] — attempting fallback")
     except Exception as e:
-        logger.warning(f"AI format error for '{channel_name}': {e} — using original text")
+        format_error = f"error ({provider}): {e}"
+        logger.warning(f"AI format error for '{channel_name}' [{provider}]: {e} — attempting fallback")
+
+    # Try fallback for format if primary failed AND we have a fallback configured
+    if format_error and fallback_provider and fallback_model and fallback_api_key:
+        logger.info(f"[{channel_name}] Falling back to {fallback_provider} for format (reason: {format_error})")
+        try:
+            async with aiohttp.ClientSession() as session:
+                rewritten = await asyncio.wait_for(
+                    _call_provider(session, message_text, format_prompt, fallback_provider, fallback_model, fallback_api_key),
+                    timeout=60.0,
+                )
+            rewritten = rewritten.strip() or None
+            if verbose_logging:
+                logger.info(f"AI format [{channel_name}] (FALLBACK {fallback_provider}): rewritten ({len(rewritten or '')} chars)")
+            format_error = None  # Clear error since fallback succeeded
+
+        except asyncio.TimeoutError:
+            logger.warning(f"AI format fallback also timed out for '{channel_name}' [{fallback_provider}] — using original text")
+        except Exception as e:
+            logger.warning(f"AI format fallback error for '{channel_name}' [{fallback_provider}]: {e} — using original text")
+    elif format_error:
+        # Primary format failed but no fallback available - just use original text
+        logger.warning(f"AI format failed and no fallback configured for '{channel_name}' — using original text")
 
     return TriageResult("forward", reason, rewritten)
