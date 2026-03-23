@@ -307,7 +307,17 @@ async def triage_message(
         logger.error(f"AI triage error for '{channel_name}' [{provider}]: {e} — attempting fallback")
 
     # Try fallback if primary failed AND we have a fallback configured
-    if triage_error and fallback_provider and fallback_model and fallback_api_key:
+    if triage_error:
+        if not fallback_provider:
+            logger.warning(f"AI triage failed and no fallback_provider configured for '{channel_name}' — forwarding original")
+            return TriageResult("forward", f"triage error: {triage_error}", None)
+        if not fallback_model:
+            logger.warning(f"AI triage failed and no fallback_model configured for '{channel_name}' — forwarding original")
+            return TriageResult("forward", f"triage error: {triage_error}", None)
+        if not fallback_api_key:
+            logger.warning(f"AI triage failed and fallback API key not available for '{channel_name}' ({fallback_provider}) — forwarding original")
+            return TriageResult("forward", f"triage error: {triage_error}; fallback API key missing", None)
+        
         logger.info(f"[{channel_name}] Falling back to {fallback_provider} for triage (reason: {triage_error})")
         try:
             async with aiohttp.ClientSession() as session:
@@ -373,25 +383,33 @@ async def triage_message(
         logger.warning(f"AI format error for '{channel_name}' [{provider}]: {e} — attempting fallback")
 
     # Try fallback for format if primary failed AND we have a fallback configured
-    if format_error and fallback_provider and fallback_model and fallback_api_key:
-        logger.info(f"[{channel_name}] Falling back to {fallback_provider} for format (reason: {format_error})")
-        try:
-            async with aiohttp.ClientSession() as session:
-                rewritten = await asyncio.wait_for(
-                    _call_provider(session, message_text, format_prompt, fallback_provider, fallback_model, fallback_api_key),
-                    timeout=60.0,
-                )
-            rewritten = rewritten.strip() or None
-            if verbose_logging:
-                logger.info(f"AI format [{channel_name}] (FALLBACK {fallback_provider}): rewritten ({len(rewritten or '')} chars)")
-            format_error = None  # Clear error since fallback succeeded
+    if format_error:
+        if fallback_provider and fallback_model and fallback_api_key:
+            logger.info(f"[{channel_name}] Falling back to {fallback_provider} for format (reason: {format_error})")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    rewritten = await asyncio.wait_for(
+                        _call_provider(session, message_text, format_prompt, fallback_provider, fallback_model, fallback_api_key),
+                        timeout=60.0,
+                    )
+                rewritten = rewritten.strip() or None
+                if verbose_logging:
+                    logger.info(f"AI format [{channel_name}] (FALLBACK {fallback_provider}): rewritten ({len(rewritten or '')} chars)")
+                format_error = None  # Clear error since fallback succeeded
 
-        except asyncio.TimeoutError:
-            logger.warning(f"AI format fallback also timed out for '{channel_name}' [{fallback_provider}] — using original text")
-        except Exception as e:
-            logger.warning(f"AI format fallback error for '{channel_name}' [{fallback_provider}]: {e} — using original text")
-    elif format_error:
-        # Primary format failed but no fallback available - just use original text
-        logger.warning(f"AI format failed and no fallback configured for '{channel_name}' — using original text")
+            except asyncio.TimeoutError:
+                logger.warning(f"AI format fallback also timed out for '{channel_name}' [{fallback_provider}] — using original text")
+            except Exception as e:
+                logger.warning(f"AI format fallback error for '{channel_name}' [{fallback_provider}]: {e} — using original text")
+        else:
+            # Primary format failed but no fallback available - just use original text
+            missing = []
+            if not fallback_provider:
+                missing.append("provider")
+            if not fallback_model:
+                missing.append("model")
+            if not fallback_api_key:
+                missing.append("api_key")
+            logger.warning(f"AI format failed and fallback not fully configured for '{channel_name}' (missing: {', '.join(missing)}) — using original text")
 
     return TriageResult("forward", reason, rewritten)

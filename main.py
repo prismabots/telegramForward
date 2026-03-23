@@ -527,6 +527,9 @@ async def handle_new_message(event):
             use_fallback_api_key = (
                 os.environ.get(_AI_KEY_ENV_MAP.get(use_fallback_provider, ""), "")
             )
+            if should_log_verbose(db_channel_id):
+                api_key_status = "SET" if use_fallback_api_key else "NOT SET"
+                logger.info(f"[{channel_name}] Fallback configured: provider={use_fallback_provider}, model={use_fallback_model}, api_key={api_key_status}")
 
         if not discord_channel_id or not discord_guild_id:
             logger.warning(
