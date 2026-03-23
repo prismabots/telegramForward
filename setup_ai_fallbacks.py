@@ -72,8 +72,9 @@ def configure_channel_fallbacks(dry_run: bool = False, reset: bool = False):
         logger.error("BACKUP_DB_ADMIN_URL environment variable is not set.")
         sys.exit(1)
 
-    logger.info("Initialising database schema...")
-    db.init_db()
+    # Note: db.init_db() requires owner permissions on DigitalOcean.
+    # Schema is already migrated on first run of main.py, so we skip it here.
+    logger.info("Connecting to database...")
 
     logger.info("Loading channels from database...")
     channels = db.get_channels(enabled_only=False)
