@@ -115,10 +115,15 @@ async def _query_grok(session: aiohttp.ClientSession, prompt: str, system: str, 
         ],
         "temperature": 0.1,
     }
+    logger.debug(f"Querying Grok: model={model}, prompt_len={len(prompt)}, api_key={api_key[:20]}...")
     async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
         if resp.status == 200:
-            return (await resp.json())["choices"][0]["message"]["content"]
-        raise Exception(f"Grok error {resp.status}: {await resp.text()}")
+            result = (await resp.json())["choices"][0]["message"]["content"]
+            logger.debug(f"Grok success: {len(result)} chars returned")
+            return result
+        error_text = await resp.text()
+        logger.error(f"Grok error {resp.status}: {error_text[:500]}")
+        raise Exception(f"Grok error {resp.status}: {error_text}")
 
 
 async def _query_deepseek(session: aiohttp.ClientSession, prompt: str, system: str, model: str, api_key: str) -> str:
@@ -272,6 +277,8 @@ async def triage_message(
     # ── Pass 1: Triage ────────────────────────────────────────────────────
     triage_error = None
     try:
+        if verbose_logging:
+            logger.info(f"[{channel_name}] Starting triage with {provider}/{model}")
         async with aiohttp.ClientSession() as session:
             raw = await asyncio.wait_for(
                 _call_provider(session, user_prompt, triage_prompt, provider, model, api_key),
@@ -297,14 +304,16 @@ async def triage_message(
             logger.info(f"AI triage [{channel_name}]: {action} — {reason}")
 
     except asyncio.TimeoutError as e:
-        triage_error = f"triage timeout ({provider})"
-        logger.warning(f"AI triage timed out for '{channel_name}' [{provider}] — attempting fallback")
+        triage_error = f"timeout ({provider})"
+        logger.warning(f"AI triage TIMEOUT (35s) for '{channel_name}' [{provider}] - {type(e).__name__}: {e}")
+        logger.info(f"[{channel_name}] Attempting fallback due to timeout...")
     except (json.JSONDecodeError, KeyError) as e:
         triage_error = f"invalid JSON ({provider}): {e}"
         logger.warning(f"AI triage invalid JSON for '{channel_name}' [{provider}]: {e} — attempting fallback")
     except Exception as e:
         triage_error = f"error ({provider}): {e}"
-        logger.error(f"AI triage error for '{channel_name}' [{provider}]: {e} — attempting fallback")
+        logger.error(f"AI triage ERROR for '{channel_name}' [{provider}] - {type(e).__name__}: {str(e)[:200]}")
+        logger.info(f"[{channel_name}] Attempting fallback due to error...")
 
     # Try fallback if primary failed AND we have a fallback configured
     if triage_error:
@@ -318,7 +327,7 @@ async def triage_message(
             logger.warning(f"AI triage failed and fallback API key not available for '{channel_name}' ({fallback_provider}) — forwarding original")
             return TriageResult("forward", f"triage error: {triage_error}; fallback API key missing", None)
         
-        logger.info(f"[{channel_name}] Falling back to {fallback_provider} for triage (reason: {triage_error})")
+        logger.info(f"[{channel_name}] Falling back to {fallback_provider}/{fallback_model} for triage (reason: {triage_error})")
         try:
             async with aiohttp.ClientSession() as session:
                 raw = await asyncio.wait_for(
@@ -366,6 +375,8 @@ async def triage_message(
     rewritten: str | None = None
     format_error = None
     try:
+        if verbose_logging:
+            logger.info(f"[{channel_name}] Starting format with {provider}/{model}")
         async with aiohttp.ClientSession() as session:
             rewritten = await asyncio.wait_for(
                 _call_provider(session, message_text, format_prompt, provider, model, api_key),
@@ -377,15 +388,15 @@ async def triage_message(
 
     except asyncio.TimeoutError as e:
         format_error = f"timeout ({provider})"
-        logger.warning(f"AI format timed out for '{channel_name}' [{provider}] — attempting fallback")
+        logger.warning(f"AI format TIMEOUT (60s) for '{channel_name}' [{provider}]")
     except Exception as e:
         format_error = f"error ({provider}): {e}"
-        logger.warning(f"AI format error for '{channel_name}' [{provider}]: {e} — attempting fallback")
+        logger.error(f"AI format ERROR for '{channel_name}' [{provider}] - {type(e).__name__}: {str(e)[:200]}")
 
     # Try fallback for format if primary failed AND we have a fallback configured
     if format_error:
         if fallback_provider and fallback_model and fallback_api_key:
-            logger.info(f"[{channel_name}] Falling back to {fallback_provider} for format (reason: {format_error})")
+            logger.info(f"[{channel_name}] Falling back to {fallback_provider}/{fallback_model} for format (reason: {format_error})")
             try:
                 async with aiohttp.ClientSession() as session:
                     rewritten = await asyncio.wait_for(

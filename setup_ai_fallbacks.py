@@ -33,16 +33,16 @@ logger = logging.getLogger(__name__)
 # Default fallback chains per provider
 FALLBACK_CONFIG = {
     "grok": {
-        "fallback_provider": "glm",
-        "fallback_model": "glm-4.7-flashx",
+        "fallback_provider": "google",
+        "fallback_model": "gemini-2.0-flash",
     },
     "glm": {
-        "fallback_provider": "openai",
-        "fallback_model": "gpt-5-nano",
+        "fallback_provider": "google",
+        "fallback_model": "gemini-2.0-flash",
     },
     "openai": {
-        "fallback_provider": "glm",
-        "fallback_model": "glm-4.7-flashx",
+        "fallback_provider": "google",
+        "fallback_model": "gemini-2.0-flash",
     },
     "google": {
         "fallback_provider": "openai",
@@ -53,15 +53,15 @@ FALLBACK_CONFIG = {
         "fallback_model": "gpt-5-nano",
     },
     "sonar": {
-        "fallback_provider": "openai",
-        "fallback_model": "gpt-5-nano",
+        "fallback_provider": "google",
+        "fallback_model": "gemini-2.0-flash",
     },
 }
 
 # Global settings for fallback (used when channel has no specific provider set)
 GLOBAL_FALLBACK_CONFIG = {
-    "fallback_provider": "glm",
-    "fallback_model": "glm-4.7-flashx",
+    "fallback_provider": "google",
+    "fallback_model": "gemini-2.0-flash",
 }
 
 
