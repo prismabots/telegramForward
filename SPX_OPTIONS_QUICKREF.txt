@@ -1,0 +1,162 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║                   SPX OPTIONS AI - QUICK REFERENCE                     ║
+║                         Channel 13 Setup                               ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+┌─ INSTALLATION ───────────────────────────────────────────────────────┐
+│                                                                          │
+│  1. Set database environment variable:                                  │
+│     $env:BACKUP_DB_ADMIN_URL = "postgresql://..."                       │
+│                                                                          │
+│  2. Apply configuration:                                                │
+│     python apply_spx_options_prompts.py                                 │
+│                                                                          │
+│  3. Restart bot to apply changes                                        │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ TESTING ────────────────────────────────────────────────────────────┐
+│                                                                          │
+│  Run test suite:                                                        │
+│     python test_spx_options_prompts.py                                  │
+│                                                                          │
+│  Test cases include:                                                    │
+│   ✓ Arabic signals (كول/بوت)                                           │
+│   ✓ English signals                                                     │
+│   ✓ Promotional filtering                                               │
+│   ✓ Edge cases (images, meaningless content)                            │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHAT IT DOES ───────────────────────────────────────────────────────┐
+│                                                                          │
+│  ACCEPTS & FORWARDS:                                                    │
+│   ✅ SPX options signals (Call/Put)                                     │
+│   ✅ Strike prices and entry points                                     │
+│   ✅ Targets, resistance, support levels                                │
+│   ✅ Gains/losses with numbers                                          │
+│   ✅ Trading advice and risk notes                                      │
+│   ✅ Arabic and English content                                         │
+│                                                                          │
+│  FILTERS OUT:                                                           │
+│   ❌ Promotional content                                                │
+│   ❌ Sales pitches and product links                                    │
+│   ❌ Engagement requests (likes/shares)                                 │
+│   ❌ VIP/premium service ads                                            │
+│   ❌ Non-trading content                                                │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY FEATURES ───────────────────────────────────────────────────────┐
+│                                                                          │
+│  📝 Auto-translation: Arabic → English (كول → Call, بوت → Put)         │
+│  🎯 Smart filtering: Removes promo, keeps signals                       │
+│  📊 Structured output: Clean Discord formatting                         │
+│  🔍 Terminology: "Price" instead of pronouns                            │
+│  ⚡ Edge handling: Special cases for images, empty messages             │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ FILES CREATED ──────────────────────────────────────────────────────┐
+│                                                                          │
+│  📄 prompts/triage_spx_options.txt    - Filtering logic                │
+│  📄 prompts/format_spx_options.txt    - Formatting rules               │
+│  🔧 apply_spx_options_prompts.py      - Configuration script           │
+│  🧪 test_spx_options_prompts.py       - Test suite                     │
+│  📖 SPX_OPTIONS_README.md             - Full documentation             │
+│  📋 SPX_OPTIONS_QUICKREF.txt          - This file                      │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ EXAMPLE TRANSFORMATIONS ────────────────────────────────────────────┐
+│                                                                          │
+│  INPUT (Arabic):                                                        │
+│  كول SPX 5800 شراء الآن، الهدف 5850                                    │
+│                                                                          │
+│  OUTPUT:                                                                │
+│  SPX Call @ 5800                                                        │
+│  Action: BUY now                                                        │
+│  Target: 5850                                                           │
+│  ─────────────────────────────────────────────────────────────────      │
+│  INPUT (with promo):                                                    │
+│  SPX Call 5800 entered. Target 5850. 🎯                                 │
+│  Join our VIP channel for more signals!                                 │
+│                                                                          │
+│  OUTPUT:                                                                │
+│  SPX Call @ 5800                                                        │
+│  Action: Entered                                                        │
+│  Target: 5850 🎯                                                        │
+│  (Promotional text removed)                                             │
+│  ─────────────────────────────────────────────────────────────────      │
+│  INPUT (pure promo):                                                    │
+│  Join our premium service! Limited time offer!                          │
+│                                                                          │
+│  OUTPUT:                                                                │
+│  [Message discarded - not forwarded to Discord]                         │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ TROUBLESHOOTING ────────────────────────────────────────────────────┐
+│                                                                          │
+│  Problem: "BACKUP_DB_ADMIN_URL not set"                                │
+│  Fix: Set environment variable with database connection string          │
+│                                                                          │
+│  Problem: "Channel ID 13 not found"                                     │
+│  Fix: Run 'python show_settings.py' to verify channel exists           │
+│                                                                          │
+│  Problem: AI not processing messages                                    │
+│  Fix: Restart bot after configuration                                   │
+│       Check AI provider and API key are configured                      │
+│                                                                          │
+│  Problem: Messages forwarded but not formatted                          │
+│  Fix: Check logs for AI format errors or timeouts                       │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ CUSTOMIZATION ──────────────────────────────────────────────────────┐
+│                                                                          │
+│  To modify prompts:                                                     │
+│                                                                          │
+│  1. Edit prompt files:                                                  │
+│     notepad prompts\triage_spx_options.txt                              │
+│     notepad prompts\format_spx_options.txt                              │
+│                                                                          │
+│  2. Reapply configuration:                                              │
+│     python apply_spx_options_prompts.py                                 │
+│                                                                          │
+│  3. Test changes:                                                       │
+│     python test_spx_options_prompts.py                                  │
+│                                                                          │
+│  4. Restart bot                                                         │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ MONITORING ─────────────────────────────────────────────────────────┐
+│                                                                          │
+│  Channel 13 has verbose logging enabled. Look for:                     │
+│                                                                          │
+│  INFO: AI triage [Control Optional SPX]: forward — ...                 │
+│  INFO: AI format [Control Optional SPX]: rewritten (XXX chars)         │
+│                                                                          │
+│  Performance:                                                           │
+│  • Triage timeout: 35 seconds                                           │
+│  • Format timeout: 60 seconds                                           │
+│  • Fallback: Forwards original on error                                │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─ SUPPORT ────────────────────────────────────────────────────────────┐
+│                                                                          │
+│  📖 Full documentation: SPX_OPTIONS_README.md                           │
+│  🔧 Database functions: db.py                                           │
+│  🤖 AI services: ai_services.py                                         │
+│  📝 Main bot logic: main.py                                             │
+│  🔍 Settings viewer: show_settings.py                                   │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════╗
+║  Channel 13: Control Optional SPX                                      ║
+║  System Version: 1.0                                                   ║
+║  Last Updated: March 10, 2026                                          ║
+╚════════════════════════════════════════════════════════════════════════╝
