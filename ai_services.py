@@ -19,12 +19,14 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-# SPX Channel ID for detailed logging
+# Channel IDs and names for detailed logging
 SPX_CHANNEL_ID = 13
+KYLE_TEST_CHANNEL_ID = 16
 
 def _is_spx_channel(channel_id: int | None, channel_name: str) -> bool:
-    """Check if this is the SPX Options AI channel."""
-    return channel_id == SPX_CHANNEL_ID or "SPX" in channel_name
+    """Check if this is the SPX Options AI channel or KyleTestgroup (test channel)."""
+    return (channel_id == SPX_CHANNEL_ID or channel_id == KYLE_TEST_CHANNEL_ID or 
+            "SPX" in channel_name or "Kyle" in channel_name)
 
 def _log_spx_input(channel_id: int | None, channel_name: str, message_text: str, 
                    triage_prompt: str, provider: str, model: str) -> None:
