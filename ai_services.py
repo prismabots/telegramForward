@@ -19,6 +19,67 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
+# SPX Channel ID for detailed logging
+SPX_CHANNEL_ID = 13
+
+def _is_spx_channel(channel_id: int | None, channel_name: str) -> bool:
+    """Check if this is the SPX Options AI channel."""
+    return channel_id == SPX_CHANNEL_ID or "SPX" in channel_name
+
+def _log_spx_input(channel_id: int | None, channel_name: str, message_text: str, 
+                   triage_prompt: str, provider: str, model: str) -> None:
+    """Log SPX channel input for debugging."""
+    if not _is_spx_channel(channel_id, channel_name):
+        return
+    logger.info(f"\n{'='*80}")
+    logger.info(f"[SPX AI INPUT] Channel: {channel_name} (ID {channel_id})")
+    logger.info(f"[SPX AI INPUT] Provider: {provider} | Model: {model}")
+    logger.info(f"[SPX AI INPUT] Message ({len(message_text)} chars):")
+    logger.info(f"  {repr(message_text[:200])}")
+    if len(message_text) > 200:
+        logger.info(f"  ... ({len(message_text) - 200} more chars)")
+    logger.info(f"[SPX AI INPUT] Triage Prompt ({len(triage_prompt)} chars):")
+    logger.info(f"  {repr(triage_prompt[:150])}")
+    if len(triage_prompt) > 150:
+        logger.info(f"  ... ({len(triage_prompt) - 150} more chars)")
+    logger.info(f"{'='*80}\n")
+
+def _log_spx_triage_output(channel_id: int | None, channel_name: str, action: str, 
+                           reason: str, raw_response: str | None = None) -> None:
+    """Log SPX channel triage output."""
+    if not _is_spx_channel(channel_id, channel_name):
+        return
+    logger.info(f"\n{'='*80}")
+    logger.info(f"[SPX AI TRIAGE OUTPUT] Channel: {channel_name} (ID {channel_id})")
+    logger.info(f"[SPX AI TRIAGE OUTPUT] Action: {action}")
+    logger.info(f"[SPX AI TRIAGE OUTPUT] Reason: {reason}")
+    if raw_response:
+        logger.info(f"[SPX AI TRIAGE OUTPUT] Raw Response ({len(raw_response)} chars):")
+        logger.info(f"  {repr(raw_response[:300])}")
+        if len(raw_response) > 300:
+            logger.info(f"  ... ({len(raw_response) - 300} more chars)")
+    logger.info(f"{'='*80}\n")
+
+def _log_spx_format_output(channel_id: int | None, channel_name: str, 
+                          original_text: str, formatted_text: str | None) -> None:
+    """Log SPX channel format output."""
+    if not _is_spx_channel(channel_id, channel_name):
+        return
+    logger.info(f"\n{'='*80}")
+    logger.info(f"[SPX AI FORMAT OUTPUT] Channel: {channel_name} (ID {channel_id})")
+    logger.info(f"[SPX AI FORMAT OUTPUT] Original Text ({len(original_text)} chars):")
+    logger.info(f"  {repr(original_text[:250])}")
+    if len(original_text) > 250:
+        logger.info(f"  ... ({len(original_text) - 250} more chars)")
+    if formatted_text:
+        logger.info(f"[SPX AI FORMAT OUTPUT] Formatted Text ({len(formatted_text)} chars):")
+        logger.info(f"  {repr(formatted_text[:250])}")
+        if len(formatted_text) > 250:
+            logger.info(f"  ... ({len(formatted_text) - 250} more chars)")
+    else:
+        logger.info(f"[SPX AI FORMAT OUTPUT] Formatted Text: None (using original)")
+    logger.info(f"{'='*80}\n")
+
 # ---------------------------------------------------------------------------
 # Default prompts (used when a channel has no custom prompt set)
 # ---------------------------------------------------------------------------
@@ -273,6 +334,9 @@ async def triage_message(
             reply_context += f"\n[PARENT MESSAGE]:\n{parent_message_text}\n[END PARENT MESSAGE]"
     
     user_prompt = f"Channel: {channel_name}{reply_context}\n\nMessage:\n{message_text}"
+    
+    # Log SPX AI input
+    _log_spx_input(channel_id, channel_name, message_text, triage_prompt, provider, model)
 
     # ── Pass 1: Triage ────────────────────────────────────────────────────
     triage_error = None
@@ -302,6 +366,9 @@ async def triage_message(
 
         if verbose_logging:
             logger.info(f"AI triage [{channel_name}]: {action} — {reason}")
+        
+        # Log SPX triage output
+        _log_spx_triage_output(channel_id, channel_name, action, reason, raw)
 
     except asyncio.TimeoutError as e:
         triage_error = f"timeout ({provider})"
@@ -352,6 +419,9 @@ async def triage_message(
 
             if verbose_logging:
                 logger.info(f"AI triage [{channel_name}] (FALLBACK {fallback_provider}): {action} — {reason}")
+            
+            # Log SPX triage output (fallback)
+            _log_spx_triage_output(channel_id, channel_name, action, reason, raw)
             triage_error = None  # Clear error since fallback succeeded
 
         except asyncio.TimeoutError:
@@ -369,6 +439,8 @@ async def triage_message(
         return TriageResult("forward", f"triage error: {triage_error}", None)
 
     if action == "discard":
+        # Log SPX discard decision
+        _log_spx_triage_output(channel_id, channel_name, "discard", reason)
         return TriageResult("discard", reason, None)
 
     # ── Pass 2: Format ────────────────────────────────────────────────────
@@ -423,4 +495,7 @@ async def triage_message(
                 missing.append("api_key")
             logger.warning(f"AI format failed and fallback not fully configured for '{channel_name}' (missing: {', '.join(missing)}) — using original text")
 
+    # Log SPX format output
+    _log_spx_format_output(channel_id, channel_name, message_text, rewritten)
+    
     return TriageResult("forward", reason, rewritten)
