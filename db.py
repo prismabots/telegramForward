@@ -278,21 +278,32 @@ _DEFAULT_SETTINGS = {
 
 
 def init_db():
-    """Create tables and seed default settings if they don't exist."""
-    conn = get_connection()
-    try:
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(_DDL)
-                for key, value in _DEFAULT_SETTINGS.items():
-                    cur.execute(
-                        "INSERT INTO tele_settings (key, value) VALUES (%s, %s) "
-                        "ON CONFLICT (key) DO NOTHING",
-                        (key, value),
-                    )
-        logger.info("Database initialised successfully.")
-    finally:
-        release_connection(conn)
+    """Create tables and seed default settings if they don't exist, with retry logic."""
+    max_retries = 3
+    for attempt in range(max_retries):
+        conn = get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(_DDL)
+                    for key, value in _DEFAULT_SETTINGS.items():
+                        cur.execute(
+                            "INSERT INTO tele_settings (key, value) VALUES (%s, %s) "
+                            "ON CONFLICT (key) DO NOTHING",
+                            (key, value),
+                        )
+            logger.info("Database initialised successfully.")
+            break  # Success, exit retry loop
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"Database error during init (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)  # Longer delay for init retry
+                continue
+            else:
+                logger.error(f"Failed to initialize database after {max_retries} attempts")
+                raise
+        finally:
+            release_connection(conn)
 
 
 # ---------------------------------------------------------------------------
