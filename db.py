@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import datetime
+import time
 import psycopg2
 import psycopg2.extras
 from psycopg2 import pool
@@ -79,7 +80,6 @@ def release_connection(conn):
 
 def _with_retry(func, max_retries=3):
     """Helper to retry database operations on connection loss."""
-    import time
     for attempt in range(max_retries):
         try:
             return func()
@@ -494,7 +494,6 @@ def save_message(
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             logger.warning(f"Database error (attempt {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
-                import time
                 time.sleep(0.5)  # Brief delay before retry
                 continue
             else:
