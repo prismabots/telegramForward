@@ -55,16 +55,42 @@ def _get_pool() -> pool.SimpleConnectionPool:
 
 
 def get_connection():
-    """Borrow a connection from the pool."""
-    return _get_pool().getconn()
+    """Borrow a connection from the pool, with automatic recovery."""
+    try:
+        return _get_pool().getconn()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+        # Connection pool is dead, recreate it
+        logger.warning(f"Connection pool error, recreating: {e}")
+        global _pool
+        _pool = None
+        return _get_pool().getconn()
 
 
 def release_connection(conn):
     """Return a connection to the pool."""
     try:
-        _get_pool().putconn(conn)
-    except Exception:
-        pass
+        if conn and not conn.closed:
+            _get_pool().putconn(conn)
+        else:
+            logger.warning("Skipping return of closed connection to pool")
+    except Exception as e:
+        logger.warning(f"Error returning connection to pool: {e}")
+
+
+def _with_retry(func, max_retries=3):
+    """Helper to retry database operations on connection loss."""
+    import time
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"Database error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(0.5)  # Brief delay before retry
+                continue
+            else:
+                logger.error(f"Failed after {max_retries} attempts")
+                raise
 
 
 # ---------------------------------------------------------------------------
@@ -422,48 +448,60 @@ def save_message(
     send_status: str = "sent",
     error_detail: str | None = None,
 ) -> None:
-    """Insert a forwarded message into the archive."""
-    conn = get_connection()
-    try:
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO tele_messages (
-                        channel_id, telegram_message_id, telegram_reply_to,
-                        sender_id, sender_name,
-                        message_text, media_type, media_file_name, raw_message,
-                        discord_message_id, formatted_message, discord_username,
-                        discord_webhook, send_status, error_detail
-                    ) VALUES (
-                        %s, %s, %s,
-                        %s, %s,
-                        %s, %s, %s, %s,
-                        %s, %s, %s,
-                        %s, %s, %s
+    """Insert a forwarded message into the archive, with automatic retry on connection loss."""
+    max_retries = 3
+    for attempt in range(max_retries):
+        conn = get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO tele_messages (
+                            channel_id, telegram_message_id, telegram_reply_to,
+                            sender_id, sender_name,
+                            message_text, media_type, media_file_name, raw_message,
+                            discord_message_id, formatted_message, discord_username,
+                            discord_webhook, send_status, error_detail
+                        ) VALUES (
+                            %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s
+                        )
+                        ON CONFLICT (channel_id, telegram_message_id) DO NOTHING
+                        """,
+                        (
+                            channel_id,
+                            telegram_message_id,
+                            telegram_reply_to,
+                            sender_id,
+                            sender_name,
+                            message_text,
+                            media_type,
+                            media_file_name,
+                            json.dumps(raw_message, cls=_TelegramEncoder) if raw_message else None,
+                            discord_message_id,
+                            formatted_message,
+                            discord_username,
+                            discord_webhook,
+                            send_status,
+                            error_detail,
+                        ),
                     )
-                    ON CONFLICT (channel_id, telegram_message_id) DO NOTHING
-                    """,
-                    (
-                        channel_id,
-                        telegram_message_id,
-                        telegram_reply_to,
-                        sender_id,
-                        sender_name,
-                        message_text,
-                        media_type,
-                        media_file_name,
-                        json.dumps(raw_message, cls=_TelegramEncoder) if raw_message else None,
-                        discord_message_id,
-                        formatted_message,
-                        discord_username,
-                        discord_webhook,
-                        send_status,
-                        error_detail,
-                    ),
-                )
-    finally:
-        release_connection(conn)
+            break  # Success, exit retry loop
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"Database error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(0.5)  # Brief delay before retry
+                continue
+            else:
+                logger.error(f"Failed to save message after {max_retries} attempts")
+                raise
+        finally:
+            release_connection(conn)
 
 
 def get_discord_msg_id(channel_id: int, telegram_message_id: int) -> str | None:
