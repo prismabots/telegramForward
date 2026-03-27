@@ -196,6 +196,7 @@ for ch in db_channels:
         "ai_model":               ch.get("ai_model"),     # Per-channel AI model override
         "ai_fallback_provider":   ch.get("ai_fallback_provider"),  # Fallback provider for resilience
         "ai_fallback_model":      ch.get("ai_fallback_model"),     # Fallback model for resilience
+        "suppress_images":        ch.get("suppress_images", False),
     }
 
 # channel_webhook_map: numeric Telegram channel ID -> {webhook, name, db_id}
@@ -447,6 +448,7 @@ async def resolve_channels():
                 "ai_format_prompt":   cfg["ai_format_prompt"],
                 "ai_provider":        cfg["ai_provider"],
                 "ai_model":           cfg["ai_model"],
+                "suppress_images":    cfg["suppress_images"],
             }
             logger.info(
                 f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -584,6 +586,17 @@ async def handle_new_message(event):
             if media_path:
                 media_type      = detect_media_type(media_path)
                 media_file_name = os.path.basename(media_path)
+
+                # Suppress images if the channel has the flag set
+                if media_type == "photo" and cfg.get("suppress_images"):
+                    logger.info(f"[{channel_name}] Suppressing image attachment (suppress_images=True)")
+                    try:
+                        os.remove(media_path)
+                    except Exception:
+                        pass
+                    media_path      = None
+                    media_type      = None
+                    media_file_name = None
 
         # Reply threading — look up corresponding Discord message
         reply_to_discord_id = None

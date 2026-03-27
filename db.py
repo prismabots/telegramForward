@@ -214,6 +214,17 @@ BEGIN
     END IF;
 END $$;
 
+-- Idempotent: add suppress_images flag (drop image attachments before Discord send)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'suppress_images'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN suppress_images BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS tele_messages (
     id                   SERIAL      PRIMARY KEY,
     channel_id           INTEGER     NOT NULL REFERENCES tele_channels(id) ON DELETE CASCADE,
@@ -397,11 +408,11 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
     Update one or more columns on a channel row.
     Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id,
                      ai_enabled, ai_triage_prompt, ai_format_prompt, ai_provider, ai_model,
-                     ai_fallback_provider, ai_fallback_model
+                     ai_fallback_provider, ai_fallback_model, suppress_images
     """
     allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", 
                "ai_enabled", "ai_triage_prompt", "ai_format_prompt", "ai_provider", "ai_model",
-               "ai_fallback_provider", "ai_fallback_model"}
+               "ai_fallback_provider", "ai_fallback_model", "suppress_images"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None
