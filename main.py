@@ -36,6 +36,35 @@ def should_log_verbose(channel_id: int) -> bool:
     return channel_id in VERBOSE_CHANNELS
 
 # ---------------------------------------------------------------------------
+# Pre-AI banned phrase filter (case-insensitive substring match)
+# Messages containing any of these phrases are dropped instantly,
+# before reaching the AI — saving API tokens and latency.
+# Add new entries here to block spammy/promotional content patterns.
+# ---------------------------------------------------------------------------
+BANNED_PHRASES = [
+    # Discord promotional / invite content
+    "discord server",
+    "discord video",
+    "join our discord",
+    "join the discord",
+    "discord.gg/",
+    # Generic trading channel spam
+    "join our vip",
+    "join our group",
+    "join our channel",
+    "join our community",
+    "subscribe now",
+    "sign up now",
+    "free signals",
+    "click here to join",
+    "dm me for",
+    "dm us for",
+    "link in bio",
+    "limited spots",
+    "limited offer",
+]
+
+# ---------------------------------------------------------------------------
 # Database init + load all config
 # ---------------------------------------------------------------------------
 
@@ -626,7 +655,17 @@ async def handle_new_message(event):
         # ---------------------------------------------------------------------------
         triage_action   = "forward"
         triage_reason   = None
-        
+
+        # Pre-AI banned phrase filter — drop instantly without calling AI
+        if message_text:
+            _lower_text = message_text.lower()
+            for _phrase in BANNED_PHRASES:
+                if _phrase in _lower_text:
+                    logger.info(
+                        f"[{channel_name}] Message dropped by banned phrase filter: '{_phrase}'"
+                    )
+                    return
+
         # Pre-processing: Remove French disclaimer BEFORE AI processing
         if "France Trading Pro" in channel_name and message_text:
             disclaimers = [

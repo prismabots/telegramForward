@@ -16,6 +16,10 @@ DISCARD the message if it contains:
 - Greetings, motivational quotes, or filler
 - Spam, advertisements, or referral links
 - Messages that don't mention any trading pairs or actionable information
+- Discord invite links or promotions ("Join the X Discord Server", "discord.gg/...", etc.)
+- Discord video links or announcements ("Discord video", "Watch on Discord", etc.)
+- Any message promoting another channel, server, or community
+- "DM me", "DM us", "link in bio", "limited spots", "limited offer"
 
 Respond with valid JSON only. No markdown, no extra text.
 Format:
