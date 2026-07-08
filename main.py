@@ -345,7 +345,16 @@ async def send_to_discord(
             
             # Add reply link to embed if available
             if reply_link and payload.get('embeds'):
-                payload['embeds'][0]['description'] = f"↩️ [Reply to message]({reply_link})\n\n" + payload['embeds'][0].get('description', '')
+                embed_desc = payload['embeds'][0].get('description', '')
+                reply_text = f"↩️ [Reply to message]({reply_link})"
+                if embed_desc:
+                    payload['embeds'][0]['description'] = f"{reply_text}\n\n{embed_desc}"
+                else:
+                    payload['embeds'][0]['description'] = reply_text
+
+            # Debug: Log the payload
+            if channel_id is not None and should_log_verbose(channel_id):
+                logger.info(f"Discord payload: {json.dumps(payload, indent=2)}")
 
             with open(media_path, "rb") as f:
                 files = {"file": (filename, f, content_type)}
@@ -354,6 +363,12 @@ async def send_to_discord(
                     data={"payload_json": json.dumps(payload)},
                     files=files,
                 )
+
+            # Debug: Log the response
+            if channel_id is not None and should_log_verbose(channel_id):
+                logger.info(f"Discord response status: {response.status_code}")
+            if response.status_code != 200:
+                logger.error(f"Discord error response: {response.text}")
         else:
             if not message_text:
                 return None, None

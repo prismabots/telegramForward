@@ -229,6 +229,27 @@ def create_webhook_payload(
     return payload
 
 
+def _ensure_embed_valid(embed: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Guarantee that the embed has at least one non-empty field that Discord
+    considers valid content: title or description.
+
+    If both are missing or contain only whitespace, set a minimal placeholder
+    description so Discord does not reject the webhook with a 400 error.
+    """
+    title = embed.get('title')
+    description = embed.get('description')
+
+    has_title = isinstance(title, str) and title.strip()
+    has_description = isinstance(description, str) and description.strip()
+
+    if not has_title and not has_description:
+        logger.warning("Embed has no usable title or description after sanitization; applying placeholder.")
+        embed['description'] = 'Keep Alive / Status Update'
+
+    return embed
+
+
 def _sanitize_embed_for_discord(embed: Dict[str, Any]) -> Dict[str, Any]:
     """
     Truncate embed fields to Discord limits to avoid 400 Bad Request errors.
@@ -285,5 +306,10 @@ def _sanitize_embed_for_discord(embed: Dict[str, Any]) -> Dict[str, Any]:
     # Footer
     if 'footer' in embed and isinstance(embed['footer'], dict):
         embed['footer']['text'] = _t(embed['footer'].get('text', ''), 2048)
+
+    # Final safety net: Discord requires at least a non-empty title or description.
+    # The sanitization above may have stripped both keys, so re-check and insert a
+    # minimal placeholder to guarantee the embed is accepted by the API.
+    _ensure_embed_valid(embed)
 
     return embed
