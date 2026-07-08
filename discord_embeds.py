@@ -141,9 +141,15 @@ def build_embed(message_text: str, quoted_text: Optional[str] = None) -> Dict[st
     
     # Ensure embed has at least title or description (Discord requirement)
     if not embed.get('title') and not embed.get('description'):
-        # Fallback: use first 200 chars of original message as description
-        logger.warning(f"Embed has no title or description, using message fallback. Message: {message_text[:100]}...")
-        embed['description'] = message_text[:200] + ('...' if len(message_text) > 200 else '')
+        fallback_text = message_text.strip() if message_text else ''
+        if fallback_text:
+            # Fallback: use first 200 chars of original message as description
+            logger.warning(f"Embed has no title or description, using message fallback. Message: {fallback_text[:100]}...")
+            embed['description'] = fallback_text[:200] + ('...' if len(fallback_text) > 200 else '')
+        else:
+            # Image-only message — no text at all, use a minimal placeholder so Discord accepts it
+            logger.warning("Embed has no title, description, or message text (image-only message). Using placeholder.")
+            embed['description'] = '📷'
     
     # Add fields
     if parsed['fields']:
@@ -247,12 +253,19 @@ def _sanitize_embed_for_discord(embed: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             return str(s)
 
-    # Title/description/color
+    # Title/description/color — remove key entirely if empty to avoid Discord 400
     if 'title' in embed:
-        embed['title'] = _t(embed.get('title', ''), 256)
+        truncated = _t(embed.get('title', ''), 256)
+        if truncated:
+            embed['title'] = truncated
+        else:
+            del embed['title']
     if 'description' in embed:
-        embed['description'] = _t(embed.get('description', ''), 4096)
-    # Color should be int; leave as-is
+        truncated = _t(embed.get('description', ''), 4096)
+        if truncated:
+            embed['description'] = truncated
+        else:
+            del embed['description']
 
     # Fields
     fields = embed.get('fields') or []
