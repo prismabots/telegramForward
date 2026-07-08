@@ -64,6 +64,23 @@ BANNED_PHRASES = [
     "limited offer",
 ]
 
+
+def contains_arabic(text: str) -> bool:
+    """Return True if text contains Arabic script characters (U+0600–U+06FF, etc.)."""
+    if not text:
+        return False
+    for char in text:
+        if (
+            ("\u0600" <= char <= "\u06ff")
+            or ("\u0750" <= char <= "\u077f")
+            or ("\u08a0" <= char <= "\u08ff")
+            or ("\ufb50" <= char <= "\ufdff")
+            or ("\ufe70" <= char <= "\ufeff")
+        ):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Database init + load all config
 # ---------------------------------------------------------------------------
@@ -481,18 +498,20 @@ async def resolve_channels():
 
             numeric_id = entity.id
             channel_webhook_map[numeric_id] = {
-                "webhook":            cfg["webhook"],
-                "name":               cfg["name"],
-                "db_id":              cfg["db_id"],
-                "role_id":            cfg["role_id"],
-                "discord_channel_id": cfg["discord_channel_id"],
-                "discord_guild_id":   cfg["discord_guild_id"],
-                "ai_enabled":         cfg["ai_enabled"],
-                "ai_triage_prompt":   cfg["ai_triage_prompt"],
-                "ai_format_prompt":   cfg["ai_format_prompt"],
-                "ai_provider":        cfg["ai_provider"],
-                "ai_model":           cfg["ai_model"],
-                "suppress_images":    cfg["suppress_images"],
+                "webhook":                cfg["webhook"],
+                "name":                   cfg["name"],
+                "db_id":                  cfg["db_id"],
+                "role_id":                cfg["role_id"],
+                "discord_channel_id":     cfg["discord_channel_id"],
+                "discord_guild_id":       cfg["discord_guild_id"],
+                "ai_enabled":             cfg["ai_enabled"],
+                "ai_triage_prompt":       cfg["ai_triage_prompt"],
+                "ai_format_prompt":       cfg["ai_format_prompt"],
+                "ai_provider":            cfg["ai_provider"],
+                "ai_model":               cfg["ai_model"],
+                "ai_fallback_provider":   cfg["ai_fallback_provider"],
+                "ai_fallback_model":      cfg["ai_fallback_model"],
+                "suppress_images":        cfg["suppress_images"],
             }
             logger.info(
                 f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -721,6 +740,15 @@ async def handle_new_message(event):
         if triage_action == "discard":
             if should_log_verbose(db_channel_id):
                 logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
+            return
+
+        # Safety net: never let Arabic text reach Discord.
+        # This guards against both AI failures and fallback failures.
+        if (message_text and contains_arabic(message_text)) or (quoted_text and contains_arabic(quoted_text)):
+            logger.warning(
+                f"[{channel_name}] Message still contains Arabic after AI processing — "
+                "discarding to prevent Arabic output"
+            )
             return
 
         # Send to Discord

@@ -22,6 +22,8 @@ import argparse
 
 # Make sure db module is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from load_env import load_environment
+load_environment()
 import db
 
 logging.basicConfig(

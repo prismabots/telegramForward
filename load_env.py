@@ -10,17 +10,24 @@ Usage:
 """
 
 import os
+import sys
 from pathlib import Path
 
 
 def load_environment():
     """Load environment variables from .env file if it exists."""
+    # Avoid UnicodeEncodeError on Windows terminals that default to cp1256/cp1252
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     
     # Find .env file in project root
     env_file = Path(__file__).parent / ".env"
     
     if not env_file.exists():
-        print("⚠️  No .env file found. Using system environment variables.")
+        print("[WARN] No .env file found. Using system environment variables.")
         return False
     
     # Read and parse .env file
@@ -42,7 +49,7 @@ def load_environment():
                 if key and not os.environ.get(key):
                     os.environ[key] = value
     
-    print("✅ Environment variables loaded from .env")
+    print("[OK] Environment variables loaded from .env")
     return True
 
 
@@ -66,10 +73,10 @@ def verify_credentials():
                 masked = value[:10] + '...' + value[-4:]
             else:
                 masked = '***'
-            print(f"✅ {key}: {masked}")
+            print(f"[OK] {key}: {masked}")
     
     if missing:
-        print("\n❌ Missing credentials:")
+        print("\n[ERROR] Missing credentials:")
         for item in missing:
             print(item)
         return False
@@ -92,8 +99,8 @@ if __name__ == "__main__":
     print()
     
     if verify_credentials():
-        print("\n✅ All required credentials are present!")
+        print("\n[OK] All required credentials are present!")
     else:
-        print("\n❌ Some credentials are missing. Please check .env file.")
+        print("\n[ERROR] Some credentials are missing. Please check .env file.")
     
     print("\n" + "=" * 60)
