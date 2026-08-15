@@ -2,7 +2,7 @@
 cli.py — Command-line management tool for telegramForward.
 
 Manages channels and settings stored in the PostgreSQL database.
-DATABASE_URL must be set as an environment variable.
+BACKUP_DB_ADMIN_URL must be set as an environment variable.
 
 Usage examples:
     python cli.py channel list
@@ -34,8 +34,8 @@ logging.basicConfig(
 # ---------------------------------------------------------------------------
 
 def _check_db_url():
-    if not os.environ.get("DATABASE_URL"):
-        print("ERROR: DATABASE_URL environment variable is not set.", file=sys.stderr)
+    if not os.environ.get("BACKUP_DB_ADMIN_URL"):
+        print("ERROR: BACKUP_DB_ADMIN_URL environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
 

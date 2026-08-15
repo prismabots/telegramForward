@@ -104,8 +104,8 @@ if __name__ == "__main__":
         print("Usage: python apply_trading_prompts.py <channel_id>")
         sys.exit(1)
     
-    if not os.environ.get("DATABASE_URL"):
-        print("ERROR: DATABASE_URL environment variable not set")
+    if not os.environ.get("BACKUP_DB_ADMIN_URL"):
+        print("ERROR: BACKUP_DB_ADMIN_URL environment variable not set")
         sys.exit(1)
     
     channel_id = int(sys.argv[1])
