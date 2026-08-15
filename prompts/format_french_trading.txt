@@ -12,12 +12,12 @@ Rules:
    - Remove disclaimers like "Ceci n'est pas un conseil financier"
 
 2. UPDATES (everything else):
-   - Title: "**UPDATE: [translated first line]**"
-   - Translate the content to English
-   - Preserve urgency and emphasis with Discord markdown (**bold**, *italic*)
-   - Keep trading terms clear: position, entry, TP, SL, etc.
-   - Even if the message seems unclear, ALWAYS translate what's there
-   - Never respond with "Please provide a valid signal" - translate whatever content exists
+    - Title: "**UPDATE: [translated first line]**"
+    - Translate the content to English
+    - Preserve urgency and emphasis with Discord markdown (**bold**, *italic*)
+    - Keep trading terms clear: position, entry, TP, SL, etc.
+    - Even if the message seems unclear, ALWAYS translate what's there
+    - Never respond with "Please provide a valid signal" - translate whatever content exists
 
 3. General:
    - Remove @mentions and promotional text

@@ -15,7 +15,7 @@ import sys
 # Ensure db module is importable from the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
-from ai_services import triage_message, DEFAULT_TRIAGE_PROMPT, DEFAULT_FORMAT_PROMPT
+from ai_services import triage_message, retry_format_translation, DEFAULT_TRIAGE_PROMPT, DEFAULT_FORMAT_PROMPT
 
 # ---------------------------------------------------------------------------
 # Logging setup (basic level first; overridden after DB load below)
@@ -77,6 +77,24 @@ def contains_arabic(text: str) -> bool:
             or ("\ufb50" <= char <= "\ufdff")
             or ("\ufe70" <= char <= "\ufeff")
         ):
+            return True
+    return False
+
+
+def contains_french(text: str) -> bool:
+    """Return True if text likely contains French content."""
+    if not text:
+        return False
+    french_indicators = [
+        "acheter", "vendre", "achat", "vente", 
+        "clôturer", "cloturer", "clôture", "cloture",
+        "ceci n'est pas", "conseil financier", "faites vos propres",
+        "les gars", "quand je dis", "vous rentrez", "mettez pas",
+        "prisma signals", "gold & fx",
+    ]
+    lower = text.lower()
+    for indicator in french_indicators:
+        if indicator in lower:
             return True
     return False
 
@@ -701,7 +719,7 @@ async def handle_new_message(event):
                     return
 
         # Pre-processing: Remove French disclaimer BEFORE AI processing
-        if "France Trading Pro" in channel_name and message_text:
+        if any(x in channel_name.lower() for x in ["france", "french", "fr-pro", "fr pro"]) and message_text:
             disclaimers = [
                 "⚠️ Ceci n'est pas un conseil financier, faites vos propres recherche.",
                 "Ceci n'est pas un conseil financier, faites vos propres recherche.",
@@ -736,6 +754,27 @@ async def handle_new_message(event):
             triage_reason = triage.reason
             if triage.rewritten_text:
                 message_text = triage.rewritten_text
+                
+                # Post-AI French validation — retry translation if French detected
+                if any(x in channel_name.lower() for x in ["france", "french", "fr-pro", "fr pro"]):
+                    if contains_french(message_text):
+                        logger.warning(f"[{channel_name}] French detected in AI output — retrying with strict translation")
+                        retry_text = await retry_format_translation(
+                            message_text=message_text,
+                            format_prompt=ai_format_prompt,
+                            provider=use_provider,
+                            model=use_model,
+                            api_key=ai_api_key,
+                            fallback_provider=use_fallback_provider,
+                            fallback_model=use_fallback_model,
+                            fallback_api_key=use_fallback_api_key,
+                            channel_name=channel_name,
+                            verbose_logging=should_log_verbose(db_channel_id),
+                        )
+                        if retry_text:
+                            message_text = retry_text
+                        else:
+                            logger.error(f"[{channel_name}] Translation retry failed — French may reach Discord")
 
         if triage_action == "discard":
             if should_log_verbose(db_channel_id):

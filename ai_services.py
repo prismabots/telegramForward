@@ -501,3 +501,36 @@ async def triage_message(
     _log_spx_format_output(channel_id, channel_name, message_text, rewritten)
     
     return TriageResult("forward", reason, rewritten)
+
+
+async def retry_format_translation(message_text: str, format_prompt: str, provider: str, model: str, api_key: str,
+                                   fallback_provider: str | None = None, fallback_model: str | None = None, 
+                                   fallback_api_key: str | None = None, channel_name: str = "", 
+                                   verbose_logging: bool = False) -> str | None:
+    """
+    Retry format with strict NO FRENCH prompt when AI output still contains French.
+    Uses a much stricter prompt to force complete translation.
+    """
+    strict_prompt = (
+        "STRICT TRANSLATION REQUIRED. Translate the following to English. "
+        "Output ONLY the English translation. ZERO French words allowed. "
+        "If you cannot translate a term, use the closest English equivalent. "
+        "Never output French. Never say 'Please provide' or similar error messages. "
+        "Just translate and format:\n\n" + message_text
+    )
+    
+    system = "You are a strict translator. Output English only. No French allowed."
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            rewritten = await asyncio.wait_for(
+                _call_provider(session, strict_prompt, system, provider, model, api_key),
+                timeout=60.0,
+            )
+        rewritten = rewritten.strip() or None
+        if verbose_logging:
+            logger.info(f"AI format retry [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
+        return rewritten
+    except Exception as e:
+        logger.warning(f"AI format retry failed for '{channel_name}': {e}")
+        return None
