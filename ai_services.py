@@ -534,3 +534,41 @@ async def retry_format_translation(message_text: str, format_prompt: str, provid
     except Exception as e:
         logger.warning(f"AI format retry failed for '{channel_name}': {e}")
         return None
+
+
+async def retry_format_arabic_translation(
+    message_text: str,
+    provider: str,
+    model: str,
+    api_key: str,
+    channel_name: str = "",
+    verbose_logging: bool = False,
+) -> str | None:
+    """
+    Retry format with a strict NO ARABIC prompt when AI output still contains Arabic.
+    Callers pass the FALLBACK provider/model so the retry uses a different model
+    than the one that leaked Arabic.
+    """
+    strict_prompt = (
+        "STRICT TRANSLATION REQUIRED. Translate the following to English. "
+        "Output ONLY the English translation. ZERO Arabic characters allowed. "
+        "If you cannot translate a term, use the closest English equivalent. "
+        "Never output Arabic script. "
+        "Just translate and format:\n\n" + message_text
+    )
+
+    system = "You are a strict translator. Output English only. No Arabic allowed."
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            rewritten = await asyncio.wait_for(
+                _call_provider(session, strict_prompt, system, provider, model, api_key),
+                timeout=60.0,
+            )
+        rewritten = rewritten.strip() or None
+        if verbose_logging:
+            logger.info(f"AI format Arabic retry [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
+        return rewritten
+    except Exception as e:
+        logger.warning(f"AI format Arabic retry failed for '{channel_name}': {e}")
+        return None

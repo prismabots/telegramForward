@@ -15,7 +15,13 @@ import sys
 # Ensure db module is importable from the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
-from ai_services import triage_message, retry_format_translation, DEFAULT_TRIAGE_PROMPT, DEFAULT_FORMAT_PROMPT
+from ai_services import (
+    triage_message,
+    retry_format_translation,
+    retry_format_arabic_translation,
+    DEFAULT_TRIAGE_PROMPT,
+    DEFAULT_FORMAT_PROMPT,
+)
 
 # ---------------------------------------------------------------------------
 # Logging setup (basic level first; overridden after DB load below)
@@ -142,7 +148,7 @@ ai_provider = settings.get("ai_provider", "openai")
 # Per-provider default models (used when ai_model is not set in DB)
 _AI_DEFAULT_MODELS = {
     "openai":   "gpt-5-nano",
-    "google":   "gemini-2.0-flash",
+    "google":   "gemini-2.5-flash",
     "grok":     "grok-4.1-fast",
     "deepseek": "deepseek-chat",
     "sonar":    "sonar",
@@ -780,6 +786,34 @@ async def handle_new_message(event):
             if should_log_verbose(db_channel_id):
                 logger.info(f"AI discarded message from '{channel_name}': {triage_reason}")
             return
+
+        # Post-AI Arabic validation — retry translation using the FALLBACK model only
+        if message_text and contains_arabic(message_text):
+            if use_fallback_provider and use_fallback_model and use_fallback_api_key:
+                logger.warning(
+                    f"[{channel_name}] Arabic detected in AI output — retrying with fallback "
+                    f"{use_fallback_provider}/{use_fallback_model}"
+                )
+                retry_text = await retry_format_arabic_translation(
+                    message_text=message_text,
+                    provider=use_fallback_provider,
+                    model=use_fallback_model,
+                    api_key=use_fallback_api_key,
+                    channel_name=channel_name,
+                    verbose_logging=should_log_verbose(db_channel_id),
+                )
+                if retry_text and not contains_arabic(retry_text):
+                    message_text = retry_text
+                else:
+                    logger.warning(
+                        f"[{channel_name}] Arabic translation retry failed or still contains Arabic — "
+                        "will be discarded by safety net"
+                    )
+            else:
+                logger.warning(
+                    f"[{channel_name}] Arabic detected in AI output but no fallback configured — "
+                    "will be discarded by safety net"
+                )
 
         # Safety net: never let Arabic text reach Discord.
         # This guards against both AI failures and fallback failures.

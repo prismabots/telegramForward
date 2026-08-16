@@ -43,11 +43,11 @@ try:
         ai_provider="grok",
         ai_model="grok-4-1-fast-reasoning",
         ai_fallback_provider="google",
-        ai_fallback_model="gemini-2.0-flash",
+        ai_fallback_model="gemini-2.5-flash",
     )
     print("✓ AI configuration applied:")
     print("  Primary: grok / grok-4-1-fast-reasoning")
-    print("  Fallback: google / gemini-2.0-flash")
+    print("  Fallback: google / gemini-2.5-flash")
     print()
     
     # Verify
