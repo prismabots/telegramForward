@@ -862,7 +862,11 @@ async def _process_message(event, cfg):
 
         # Safety net: never let Arabic text reach Discord.
         # This guards against both AI failures and fallback failures.
-        if (message_text and contains_arabic(message_text)) or (quoted_text and contains_arabic(quoted_text)):
+        # quoted_text is only forwarded for non-AI channels (it is suppressed
+        # when AI is enabled), so only check it in that case.
+        if (message_text and contains_arabic(message_text)) or (
+            not ai_enabled and quoted_text and contains_arabic(quoted_text)
+        ):
             logger.warning(
                 f"[{channel_name}] Message still contains Arabic after AI processing — "
                 "discarding to prevent Arabic output"
