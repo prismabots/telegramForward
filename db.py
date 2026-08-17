@@ -258,6 +258,17 @@ BEGIN
     END IF;
 END $$;
 
+-- Idempotent: add discord_username (per-channel webhook display name; NULL = global default)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'discord_username'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN discord_username TEXT;
+    END IF;
+END $$;
+
 -- Idempotent: drop UNIQUE on chat_id so one Telegram channel can forward
 -- to multiple Discord webhooks.
 ALTER TABLE tele_channels DROP CONSTRAINT IF EXISTS tele_channels_chat_id_key;
@@ -449,12 +460,12 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
     Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id,
                      ai_enabled, ai_triage_prompt, ai_format_prompt, ai_provider, ai_model,
                      ai_fallback_provider, ai_fallback_model, suppress_images,
-                     ocr_enabled, ocr_provider, ocr_tier
+                     ocr_enabled, ocr_provider, ocr_tier, discord_username
     """
     allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", 
                "ai_enabled", "ai_triage_prompt", "ai_format_prompt", "ai_provider", "ai_model",
                "ai_fallback_provider", "ai_fallback_model", "suppress_images",
-               "ocr_enabled", "ocr_provider", "ocr_tier"}
+               "ocr_enabled", "ocr_provider", "ocr_tier", "discord_username"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None

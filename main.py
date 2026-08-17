@@ -258,6 +258,7 @@ for ch in db_channels:
         "name":                   channel_name,
         "db_id":                  ch["id"],
         "role_id":                ch.get("discord_role_id"),
+        "discord_username":       ch.get("discord_username"),
         "discord_channel_id":     discord_channel_id,
         "discord_guild_id":       discord_guild_id,
         "ai_enabled":             ch.get("ai_enabled", False),
@@ -334,6 +335,7 @@ async def send_to_discord(
     quoted_text: str | None = None,
     channel_id: int | None = None,
     cleanup_media: bool = True,
+    username: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -383,7 +385,7 @@ async def send_to_discord(
                 message_text=text_to_send,
                 role_id=role_id,
                 quoted_text=quoted_text,
-                username=bot_username,
+                username=username or bot_username,
                 use_embed=True,
                 channel_id=channel_id,
                 verbose_logging=(channel_id is not None and should_log_verbose(channel_id)),
@@ -424,7 +426,7 @@ async def send_to_discord(
                 message_text=message_text,
                 role_id=role_id,
                 quoted_text=quoted_text,
-                username=bot_username,
+                username=username or bot_username,
                 use_embed=True,
                 channel_id=channel_id,
                 verbose_logging=(channel_id is not None and should_log_verbose(channel_id)),
@@ -532,6 +534,7 @@ async def resolve_channels():
                     "name":                   cfg["name"],
                     "db_id":                  cfg["db_id"],
                     "role_id":                cfg["role_id"],
+                    "discord_username":       cfg["discord_username"],
                     "discord_channel_id":     cfg["discord_channel_id"],
                     "discord_guild_id":       cfg["discord_guild_id"],
                     "ai_enabled":             cfg["ai_enabled"],
@@ -906,6 +909,7 @@ async def _send_to_destination(cfg, processed):
     discord_channel_id  = cfg.get("discord_channel_id")
     discord_guild_id    = cfg.get("discord_guild_id")
     ai_enabled          = cfg.get("ai_enabled", False)
+    discord_username    = cfg.get("discord_username") or bot_username
 
     message_text    = processed["message_text"]
     media_path      = processed["media_path"]
@@ -954,6 +958,7 @@ async def _send_to_destination(cfg, processed):
         quoted_text if not ai_enabled else None,  # Suppress quoted text for AI channels
         db_channel_id,
         cleanup_media=False,
+        username=discord_username,
     )
 
     # Archive to DB
@@ -970,7 +975,7 @@ async def _send_to_destination(cfg, processed):
         raw_message          = raw_message,
         discord_message_id   = discord_message_id,
         formatted_message    = discord_text_sent,
-        discord_username     = bot_username,
+        discord_username     = discord_username,
         discord_webhook      = webhook_url,
         send_status          = send_status,
         error_detail         = None if send_status == "sent" else "send returned no message id",

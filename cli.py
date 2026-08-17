@@ -58,6 +58,7 @@ def _print_channel(ch: dict):
         f"       telegram_id  : {tg_id}\n"
         f"       webhook      : {ch['discord_webhook']}\n"
         f"       role mention : {role_id}\n"
+        f"       username     : {ch.get('discord_username') or '(global default)'}\n"
         f"       ai triage    : {ai_line}\n"
         f"       status       : {status}\n"
         f"       created      : {ch['created_at']}"
@@ -287,6 +288,60 @@ def cmd_channel_clear_ai(args):
         sys.exit(1)
 
 
+def cmd_channel_set_username(args):
+    """Interactively pick a channel and set its per-channel webhook username."""
+    ch = _pick_channel("Enter channel ID (or Enter to cancel): ")
+    if ch is None:
+        return
+
+    if args.username:
+        username = args.username.strip()
+    else:
+        current = ch.get("discord_username") or "(global default)"
+        username = input(
+            f"Enter webhook username for '{ch['name']}'\n"
+            f"  Current: {current}\n"
+            f"  Username: "
+        ).strip()
+
+    if not username:
+        print("No username entered. Aborted.")
+        return
+
+    result = db.update_channel(ch["id"], discord_username=username)
+    if result:
+        print(f"\n✓ Webhook username '{username}' set for '{result['name']}' (ID {result['id']}).")
+    else:
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_channel_clear_username(args):
+    """Interactively pick a channel and clear its per-channel username."""
+    ch = _pick_channel("Enter channel ID to clear username from (or Enter to cancel): ")
+    if ch is None:
+        return
+
+    if not ch.get("discord_username"):
+        print(f"Channel '{ch['name']}' has no per-channel username — nothing to do.")
+        return
+
+    confirm = input(
+        f"Clear username '{ch.get('discord_username')}' from '{ch['name']}' "
+        "(fall back to global default)? [y/N] "
+    ).strip().lower()
+    if confirm != "y":
+        print("Aborted.")
+        return
+
+    result = db.update_channel(ch["id"], discord_username=None)
+    if result:
+        print(f"✓ Per-channel username cleared from '{result['name']}' (will use global default).")
+    else:
+        print(f"Channel ID {ch['id']} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Setting subcommands
 # ---------------------------------------------------------------------------
@@ -359,6 +414,12 @@ def build_parser() -> argparse.ArgumentParser:
     ch_sub.add_parser("set-ai",   help="Enable AI triage on a channel (interactive)")
     ch_sub.add_parser("clear-ai", help="Disable AI triage on a channel")
 
+    set_user_p = ch_sub.add_parser("set-username", help="Set a per-channel webhook username")
+    set_user_p.add_argument("username", nargs="?", default=None,
+                            help="Webhook username (prompted interactively if omitted)")
+
+    ch_sub.add_parser("clear-username", help="Clear the per-channel username (fall back to global)")
+
     # ── setting ───────────────────────────────────────────────────────────
     st_parser = sub.add_parser("setting", help="Manage global settings")
     st_sub = st_parser.add_subparsers(dest="action", required=True)
@@ -389,6 +450,8 @@ _COMMANDS = {
     ("channel", "clear-role"): cmd_channel_clear_role,
     ("channel", "set-ai"):     cmd_channel_set_ai,
     ("channel", "clear-ai"):   cmd_channel_clear_ai,
+    ("channel", "set-username"):   cmd_channel_set_username,
+    ("channel", "clear-username"): cmd_channel_clear_username,
     ("setting", "list"):       cmd_setting_list,
     ("setting", "get"):        cmd_setting_get,
     ("setting", "set"):        cmd_setting_set,
