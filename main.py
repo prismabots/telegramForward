@@ -231,9 +231,9 @@ if not db_channels:
     )
     sys.exit(1)
 
-# channel_configs: chat_id (username) -> {webhook, name, db_id}
-# Populated from DB; used during resolve phase.
-channel_configs: dict[str, dict] = {}
+# channel_configs: chat_id (username) -> list of {webhook, name, db_id} entries.
+# A single Telegram channel can map to multiple Discord destinations.
+channel_configs: dict[str, list[dict]] = {}
 logger.info(f"Loading {len(db_channels)} channels from database...")
 for ch in db_channels:
     webhook_url = ch["discord_webhook"]
@@ -252,7 +252,7 @@ for ch in db_channels:
         f"✓ '{channel_name}': channel_id={discord_channel_id}, guild_id={discord_guild_id}"
     )
     
-    channel_configs[ch["chat_id"]] = {
+    channel_configs.setdefault(ch["chat_id"], []).append({
         "webhook":                webhook_url,
         "name":                   channel_name,
         "db_id":                  ch["id"],
@@ -267,11 +267,11 @@ for ch in db_channels:
         "ai_fallback_provider":   ch.get("ai_fallback_provider"),  # Fallback provider for resilience
         "ai_fallback_model":      ch.get("ai_fallback_model"),     # Fallback model for resilience
         "suppress_images":        ch.get("suppress_images", False),
-    }
+    })
 
-# channel_webhook_map: numeric Telegram channel ID -> {webhook, name, db_id}
+# channel_webhook_map: numeric Telegram channel ID -> list of destination dicts.
 # Populated after Telethon resolves entities.
-channel_webhook_map: dict[int, dict] = {}
+channel_webhook_map: dict[int, list[dict]] = {}
 
 # ---------------------------------------------------------------------------
 # Telegram client
@@ -329,6 +329,7 @@ async def send_to_discord(
     discord_guild_id: str | None = None,
     quoted_text: str | None = None,
     channel_id: int | None = None,
+    cleanup_media: bool = True,
 ) -> tuple[str | None, str | None]:
     """
     Send a message (and optional media) to a Discord webhook.
@@ -477,7 +478,7 @@ async def send_to_discord(
         )
         return None, None
     finally:
-        if media_path and os.path.exists(media_path):
+        if cleanup_media and media_path and os.path.exists(media_path):
             try:
                 os.remove(media_path)
             except Exception as e:
@@ -499,7 +500,7 @@ async def resolve_channels():
     await client.start()
     resolved = []
 
-    for chat_id, cfg in channel_configs.items():
+    for chat_id, cfgs in channel_configs.items():
         try:
             if chat_id.startswith("+"):
                 # Private invite link — resolve via CheckChatInvite
@@ -509,7 +510,7 @@ async def resolve_channels():
                     entity = result.chat
                 else:
                     logger.error(
-                        f"Invite link for '{cfg['name']}' not yet joined. "
+                        f"Invite link for '{chat_id}' not yet joined. "
                         "Join first, then restart."
                     )
                     continue
@@ -521,34 +522,51 @@ async def resolve_channels():
                 entity = await client.get_entity(f"https://t.me/{chat_id}")
 
             numeric_id = entity.id
-            channel_webhook_map[numeric_id] = {
-                "webhook":                cfg["webhook"],
-                "name":                   cfg["name"],
-                "db_id":                  cfg["db_id"],
-                "role_id":                cfg["role_id"],
-                "discord_channel_id":     cfg["discord_channel_id"],
-                "discord_guild_id":       cfg["discord_guild_id"],
-                "ai_enabled":             cfg["ai_enabled"],
-                "ai_triage_prompt":       cfg["ai_triage_prompt"],
-                "ai_format_prompt":       cfg["ai_format_prompt"],
-                "ai_provider":            cfg["ai_provider"],
-                "ai_model":               cfg["ai_model"],
-                "ai_fallback_provider":   cfg["ai_fallback_provider"],
-                "ai_fallback_model":      cfg["ai_fallback_model"],
-                "suppress_images":        cfg["suppress_images"],
-            }
-            logger.info(
-                f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
-            )
+            for cfg in cfgs:
+                channel_webhook_map.setdefault(numeric_id, []).append({
+                    "webhook":                cfg["webhook"],
+                    "name":                   cfg["name"],
+                    "db_id":                  cfg["db_id"],
+                    "role_id":                cfg["role_id"],
+                    "discord_channel_id":     cfg["discord_channel_id"],
+                    "discord_guild_id":       cfg["discord_guild_id"],
+                    "ai_enabled":             cfg["ai_enabled"],
+                    "ai_triage_prompt":       cfg["ai_triage_prompt"],
+                    "ai_format_prompt":       cfg["ai_format_prompt"],
+                    "ai_provider":            cfg["ai_provider"],
+                    "ai_model":               cfg["ai_model"],
+                    "ai_fallback_provider":   cfg["ai_fallback_provider"],
+                    "ai_fallback_model":      cfg["ai_fallback_model"],
+                    "suppress_images":        cfg["suppress_images"],
+                })
+                logger.info(
+                    f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
+                )
 
-            # Back-fill numeric ID to DB if not already stored
-            db.update_channel(cfg["db_id"], telegram_channel_id=numeric_id)
+                # Back-fill numeric ID to DB if not already stored
+                db.update_channel(cfg["db_id"], telegram_channel_id=numeric_id)
+
+            # Warn if destinations for the same source diverge on the fields that
+            # drive the shared AI pass (_process_message uses the first config).
+            if len(cfgs) > 1:
+                _shared_fields = (
+                    "ai_enabled", "ai_triage_prompt", "ai_format_prompt",
+                    "ai_provider", "ai_model",
+                    "ai_fallback_provider", "ai_fallback_model",
+                    "suppress_images",
+                )
+                _first = tuple(cfgs[0].get(f) for f in _shared_fields)
+                if any(tuple(c.get(f) for f in _shared_fields) != _first for c in cfgs[1:]):
+                    logger.warning(
+                        f"'{chat_id}' has {len(cfgs)} destinations with differing AI config; "
+                        "the first destination's config will be used for the shared AI pass"
+                    )
 
             resolved.append(entity)
 
         except Exception as e:
             logger.error(
-                f"Failed to resolve channel '{cfg['name']}' ({chat_id}): {e}"
+                f"Failed to resolve channel '{chat_id}': {e}"
             )
 
     return resolved
@@ -584,17 +602,42 @@ async def handle_new_message(event):
         if not chat or not hasattr(chat, "id"):
             return
 
-        cfg = channel_webhook_map.get(chat.id)
-        if not cfg:
+        cfgs = channel_webhook_map.get(chat.id)
+        if not cfgs:
             logger.warning(f"No webhook found for chat {chat.id}")
             return
 
-        webhook_url         = cfg["webhook"]
+        # Destinations for a chat share the same source and AI config, so run the
+        # expensive parts (media download + AI triage/format) once and fan out.
+        processed = await _process_message(event, cfgs[0])
+        if processed is None:
+            return
+
+        media_path = processed.get("media_path")
+        try:
+            for cfg in cfgs:
+                try:
+                    await _send_to_destination(cfg, processed)
+                except Exception as e:
+                    logger.error(
+                        f"Error forwarding to '{cfg.get('name')}': {e}", exc_info=True
+                    )
+        finally:
+            if media_path and os.path.exists(media_path):
+                try:
+                    os.remove(media_path)
+                except Exception as e:
+                    logger.error(f"Failed to clean up media file: {e}")
+
+    except Exception as e:
+        logger.error(f"Error processing message: {e}", exc_info=True)
+
+
+async def _process_message(event, cfg):
+    media_path = None
+    try:
         channel_name        = cfg["name"]
         db_channel_id       = cfg["db_id"]
-        role_id             = cfg.get("role_id")
-        discord_channel_id  = cfg.get("discord_channel_id")
-        discord_guild_id    = cfg.get("discord_guild_id")
         ai_enabled          = cfg.get("ai_enabled", False)
         ai_triage_prompt    = cfg.get("ai_triage_prompt", DEFAULT_TRIAGE_PROMPT)
         ai_format_prompt    = cfg.get("ai_format_prompt", DEFAULT_FORMAT_PROMPT)
@@ -619,11 +662,6 @@ async def handle_new_message(event):
             if should_log_verbose(db_channel_id):
                 api_key_status = "SET" if use_fallback_api_key else "NOT SET"
                 logger.info(f"[{channel_name}] Fallback configured: provider={use_fallback_provider}, model={use_fallback_model}, api_key={api_key_status}")
-
-        if not discord_channel_id or not discord_guild_id:
-            logger.warning(
-                f"[{channel_name}] discord_channel_id or discord_guild_id not available — reply threading will not work"
-            )
 
         msg          = event.message
         message_text = msg.text or msg.message or ""
@@ -684,23 +722,6 @@ async def handle_new_message(event):
                     media_path      = None
                     media_type      = None
                     media_file_name = None
-
-        # Reply threading — look up corresponding Discord message
-        reply_to_discord_id = None
-        if tg_reply_to is not None:
-            logger.debug(
-                f"[{channel_name}] Message {tg_msg_id} is a reply to Telegram message {tg_reply_to}"
-            )
-            reply_to_discord_id = db.get_discord_msg_id(db_channel_id, tg_reply_to)
-            if reply_to_discord_id:
-                logger.debug(
-                    f"[{channel_name}] Threading: TG {tg_reply_to} → Discord {reply_to_discord_id}"
-                )
-            else:
-                logger.warning(
-                    f"[{channel_name}] Reply target TG message {tg_reply_to} not found in DB "
-                    f"(may pre-date bot or failed to send)"
-                )
 
         # Raw message for archive (serialise safely)
         try:
@@ -824,53 +845,118 @@ async def handle_new_message(event):
             )
             return
 
-        # Send to Discord
-        # Note: Don't pass quoted_text if AI is enabled - the AI already processed
-        # and translated everything, so showing raw quoted text would include untranslated content
-        discord_message_id, discord_text_sent = await send_to_discord(
-            webhook_url,
-            message_text,
-            media_path,
-            reply_to_discord_id,
-            role_id,
-            discord_channel_id,
-            discord_guild_id,
-            quoted_text if not ai_enabled else None,  # Suppress quoted text for AI channels
-            db_channel_id,
-        )
-
-        # Archive to DB
-        send_status = "sent" if discord_message_id else "failed"
-        db.save_message(
-            channel_id           = db_channel_id,
-            telegram_message_id  = tg_msg_id,
-            telegram_reply_to    = tg_reply_to,
-            sender_id            = sender_id,
-            sender_name          = sender_name,
-            message_text         = message_text or None,
-            media_type           = media_type,
-            media_file_name      = media_file_name,
-            raw_message          = raw_message,
-            discord_message_id   = discord_message_id,
-            formatted_message    = discord_text_sent,
-            discord_username     = bot_username,
-            discord_webhook      = webhook_url,
-            send_status          = send_status,
-            error_detail         = None if send_status == "sent" else "send returned no message id",
-        )
-
-        if discord_message_id:
-            if should_log_verbose(db_channel_id):
-                logger.info(
-                    f"Forwarded message from '{channel_name}' → Discord ({discord_message_id})"
-                )
-        else:
-            logger.warning(
-                f"Message from '{channel_name}' archived but Discord send failed."
-            )
+        return {
+            "message_text":     message_text,
+            "media_path":       media_path,
+            "media_type":       media_type,
+            "media_file_name":  media_file_name,
+            "tg_msg_id":        tg_msg_id,
+            "tg_reply_to":      tg_reply_to,
+            "quoted_text":      quoted_text,
+            "sender_id":        sender_id,
+            "sender_name":      sender_name,
+            "raw_message":      raw_message,
+        }
 
     except Exception as e:
-        logger.error(f"Error processing message: {e}", exc_info=True)
+        logger.error(
+            f"Error processing message for '{cfg.get('name')}': {e}", exc_info=True
+        )
+        if media_path and os.path.exists(media_path):
+            try:
+                os.remove(media_path)
+            except Exception:
+                pass
+        return None
+
+
+async def _send_to_destination(cfg, processed):
+    webhook_url         = cfg["webhook"]
+    channel_name        = cfg["name"]
+    db_channel_id       = cfg["db_id"]
+    role_id             = cfg.get("role_id")
+    discord_channel_id  = cfg.get("discord_channel_id")
+    discord_guild_id    = cfg.get("discord_guild_id")
+    ai_enabled          = cfg.get("ai_enabled", False)
+
+    message_text    = processed["message_text"]
+    media_path      = processed["media_path"]
+    media_type      = processed["media_type"]
+    media_file_name = processed["media_file_name"]
+    tg_msg_id       = processed["tg_msg_id"]
+    tg_reply_to     = processed["tg_reply_to"]
+    quoted_text     = processed["quoted_text"]
+    sender_id       = processed["sender_id"]
+    sender_name     = processed["sender_name"]
+    raw_message     = processed["raw_message"]
+
+    if not discord_channel_id or not discord_guild_id:
+        logger.warning(
+            f"[{channel_name}] discord_channel_id or discord_guild_id not available — reply threading will not work"
+        )
+
+    # Reply threading — look up corresponding Discord message
+    reply_to_discord_id = None
+    if tg_reply_to is not None:
+        logger.debug(
+            f"[{channel_name}] Message {tg_msg_id} is a reply to Telegram message {tg_reply_to}"
+        )
+        reply_to_discord_id = db.get_discord_msg_id(db_channel_id, tg_reply_to)
+        if reply_to_discord_id:
+            logger.debug(
+                f"[{channel_name}] Threading: TG {tg_reply_to} → Discord {reply_to_discord_id}"
+            )
+        else:
+            logger.warning(
+                f"[{channel_name}] Reply target TG message {tg_reply_to} not found in DB "
+                f"(may pre-date bot or failed to send)"
+            )
+
+    # Send to Discord
+    # Note: Don't pass quoted_text if AI is enabled - the AI already processed
+    # and translated everything, so showing raw quoted text would include untranslated content
+    discord_message_id, discord_text_sent = await send_to_discord(
+        webhook_url,
+        message_text,
+        media_path,
+        reply_to_discord_id,
+        role_id,
+        discord_channel_id,
+        discord_guild_id,
+        quoted_text if not ai_enabled else None,  # Suppress quoted text for AI channels
+        db_channel_id,
+        cleanup_media=False,
+    )
+
+    # Archive to DB
+    send_status = "sent" if discord_message_id else "failed"
+    db.save_message(
+        channel_id           = db_channel_id,
+        telegram_message_id  = tg_msg_id,
+        telegram_reply_to    = tg_reply_to,
+        sender_id            = sender_id,
+        sender_name          = sender_name,
+        message_text         = message_text or None,
+        media_type           = media_type,
+        media_file_name      = media_file_name,
+        raw_message          = raw_message,
+        discord_message_id   = discord_message_id,
+        formatted_message    = discord_text_sent,
+        discord_username     = bot_username,
+        discord_webhook      = webhook_url,
+        send_status          = send_status,
+        error_detail         = None if send_status == "sent" else "send returned no message id",
+    )
+
+    if discord_message_id:
+        if should_log_verbose(db_channel_id):
+            logger.info(
+                f"Forwarded message from '{channel_name}' → Discord ({discord_message_id})"
+            )
+    else:
+        logger.warning(
+            f"Message from '{channel_name}' archived but Discord send failed."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -892,8 +978,8 @@ async def main():
         )
 
         logger.info(
-            f"Monitoring {len(resolved)} channel(s): "
-            + ", ".join(c["name"] for c in channel_webhook_map.values())
+            f"Monitoring {sum(len(cfgs) for cfgs in channel_webhook_map.values())} destination(s): "
+            + ", ".join(c["name"] for cfgs in channel_webhook_map.values() for c in cfgs)
         )
         logger.info("Bot started and listening for messages...")
         await client.run_until_disconnected()

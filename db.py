@@ -225,6 +225,13 @@ BEGIN
     END IF;
 END $$;
 
+-- Idempotent: drop UNIQUE on chat_id so one Telegram channel can forward
+-- to multiple Discord webhooks.
+ALTER TABLE tele_channels DROP CONSTRAINT IF EXISTS tele_channels_chat_id_key;
+
+-- Idempotent: drop UNIQUE on telegram_channel_id for the same reason.
+ALTER TABLE tele_channels DROP CONSTRAINT IF EXISTS tele_channels_telegram_channel_id_key;
+
 CREATE TABLE IF NOT EXISTS tele_messages (
     id                   SERIAL      PRIMARY KEY,
     channel_id           INTEGER     NOT NULL REFERENCES tele_channels(id) ON DELETE CASCADE,
