@@ -10,6 +10,7 @@ import tempfile
 import mimetypes
 import json
 import discord_embeds
+import ocr_service
 import sys
 
 # Ensure db module is importable from the same directory
@@ -267,6 +268,9 @@ for ch in db_channels:
         "ai_fallback_provider":   ch.get("ai_fallback_provider"),  # Fallback provider for resilience
         "ai_fallback_model":      ch.get("ai_fallback_model"),     # Fallback model for resilience
         "suppress_images":        ch.get("suppress_images", False),
+        "ocr_enabled":            ch.get("ocr_enabled", False),
+        "ocr_provider":           ch.get("ocr_provider"),
+        "ocr_tier":               ch.get("ocr_tier"),
     })
 
 # channel_webhook_map: numeric Telegram channel ID -> list of destination dicts.
@@ -538,6 +542,9 @@ async def resolve_channels():
                     "ai_fallback_provider":   cfg["ai_fallback_provider"],
                     "ai_fallback_model":      cfg["ai_fallback_model"],
                     "suppress_images":        cfg["suppress_images"],
+                    "ocr_enabled":            cfg["ocr_enabled"],
+                    "ocr_provider":           cfg["ocr_provider"],
+                    "ocr_tier":               cfg["ocr_tier"],
                 })
                 logger.info(
                     f"Resolved channel: {cfg['name']} ({chat_id}) → ID {numeric_id}"
@@ -723,6 +730,22 @@ async def _process_message(event, cfg):
                     media_type      = None
                     media_file_name = None
 
+        # OCR (optional) — extract text from images for templates that need it
+        ocr_text = None
+        if cfg.get("ocr_enabled") and media_path and is_image(media_path):
+            try:
+                with open(media_path, "rb") as f:
+                    image_bytes = f.read()
+                ocr_text = await ocr_service.extract_text_from_image(
+                    image_bytes,
+                    provider=cfg.get("ocr_provider") or "google",
+                    llama_tier=cfg.get("ocr_tier") or "agentic",
+                )
+                if ocr_text and should_log_verbose(db_channel_id):
+                    logger.info(f"[{channel_name}] OCR extracted {len(ocr_text)} chars")
+            except Exception as e:
+                logger.warning(f"[{channel_name}] OCR failed: {e}")
+
         # Raw message for archive (serialise safely)
         try:
             raw_message = msg.to_dict()
@@ -760,7 +783,7 @@ async def _process_message(event, cfg):
                         logger.info(f"[{channel_name}] Removed French disclaimer (pre-AI)")
                     break
         
-        if ai_enabled and ai_api_key and message_text:
+        if ai_enabled and ai_api_key and (message_text or ocr_text):
             triage = await triage_message(
                 message_text  = message_text,
                 channel_name  = channel_name,
@@ -771,6 +794,7 @@ async def _process_message(event, cfg):
                 api_key       = ai_api_key,
                 is_reply      = (tg_reply_to is not None),
                 parent_message_text = quoted_text,
+                ocr_text      = ocr_text,
                 channel_id    = db_channel_id,
                 verbose_logging = should_log_verbose(db_channel_id),
                 fallback_provider = use_fallback_provider,  # Fallback provider for resilience

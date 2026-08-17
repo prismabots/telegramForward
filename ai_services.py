@@ -303,6 +303,7 @@ async def triage_message(
     api_key: str,
     is_reply: bool = False,
     parent_message_text: str | None = None,
+    ocr_text: str | None = None,
     channel_id: int | None = None,
     verbose_logging: bool = True,
     fallback_provider: str | None = None,
@@ -325,7 +326,7 @@ async def triage_message(
         fallback_model: Model to use with fallback provider
         fallback_api_key: API key for fallback provider
     """
-    if not message_text or not message_text.strip():
+    if (not message_text or not message_text.strip()) and (not ocr_text or not ocr_text.strip()):
         return TriageResult("forward", "empty message, skipped triage", None)
 
     # Build context for replies with parent message
@@ -336,6 +337,14 @@ async def triage_message(
             reply_context += f"\n[PARENT MESSAGE]:\n{parent_message_text}\n[END PARENT MESSAGE]"
     
     user_prompt = f"Channel: {channel_name}{reply_context}\n\nMessage:\n{message_text}"
+    if ocr_text and ocr_text.strip():
+        user_prompt += f"\n\n<untrusted_ocr_text>\n{ocr_text.strip()}\n</untrusted_ocr_text>"
+
+    # Format pass input — include OCR text so the translation sees the full context.
+    format_input = message_text
+    if ocr_text and ocr_text.strip():
+        format_input = (message_text + "\n\n" if message_text else "") + \
+            f"<untrusted_ocr_text>\n{ocr_text.strip()}\n</untrusted_ocr_text>"
     
     # Log SPX AI input
     _log_spx_input(channel_id, channel_name, message_text, triage_prompt, provider, model)
@@ -453,7 +462,7 @@ async def triage_message(
             logger.info(f"[{channel_name}] Starting format with {provider}/{model}")
         async with aiohttp.ClientSession() as session:
             rewritten = await asyncio.wait_for(
-                _call_provider(session, message_text, format_prompt, provider, model, api_key),
+                _call_provider(session, format_input, format_prompt, provider, model, api_key),
                 timeout=60.0,  # Increased for long messages with many trades
             )
         rewritten = rewritten.strip() or None
@@ -474,7 +483,7 @@ async def triage_message(
             try:
                 async with aiohttp.ClientSession() as session:
                     rewritten = await asyncio.wait_for(
-                        _call_provider(session, message_text, format_prompt, fallback_provider, fallback_model, fallback_api_key),
+                        _call_provider(session, format_input, format_prompt, fallback_provider, fallback_model, fallback_api_key),
                         timeout=60.0,
                     )
                 rewritten = rewritten.strip() or None

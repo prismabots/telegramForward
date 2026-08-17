@@ -38,18 +38,26 @@ KNOWN_ROLES = {
 # Templates — copy AI config from existing channels by name pattern
 # ─────────────────────────────────────────────────────────────────────────────
 TEMPLATES = {
-    "t2t":    {"search": "T2T",     "description": "T2T Gold (Forex/Crypto signals)"},
-    "spx":    {"search": "SPX",     "description": "SPX Options AI (Arabic/English options)"},
-    "algo":   {"search": "Algo",    "description": "Algo Pro (algorithmic signals)"},
-    "france": {"search": "France",  "description": "France Trading Pro (French forex)"},
-    "none":   {"search": None,      "description": "No AI (raw forwarding only)"},
+    "t2t":        {"search": "T2T",     "description": "T2T Gold (Forex/Crypto signals)"},
+    "spx":        {"search": "SPX",     "description": "SPX Options AI (Arabic/English options)"},
+    "algo":       {"search": "Algo",    "description": "Algo Pro (algorithmic signals)"},
+    "france":     {"search": "France",  "description": "France Trading Pro (French forex)"},
+    "ocr-arabic": {"search": None,      "description": "AI with OCR for Arabic (SPX options + image OCR)"},
+    "none":       {"search": None,      "description": "No AI (raw forwarding only)"},
 }
 
 
 def load_template(template_key: str) -> dict | None:
-    """Load AI config from the matching template channel."""
+    """Load AI config for a template.
+
+    Most templates copy config from an existing channel by name pattern;
+    "ocr-arabic" builds its config from the bundled prompt files.
+    """
     if template_key == "none":
         return None
+
+    if template_key == "ocr-arabic":
+        return _load_ocr_arabic_template()
 
     search = TEMPLATES[template_key]["search"]
     channels = db.get_channels(enabled_only=False)
@@ -61,6 +69,24 @@ def load_template(template_key: str) -> dict | None:
 
     print(f"  ✓ Using template: '{source['name']}' (ID {source['id']})")
     return source
+
+
+def _load_ocr_arabic_template() -> dict:
+    """Build the OCR+Arabic template config from the bundled prompt files."""
+    prompts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
+    with open(os.path.join(prompts_dir, "triage_ocr_arabic.txt"), "r", encoding="utf-8") as f:
+        triage = f.read().strip()
+    with open(os.path.join(prompts_dir, "format_ocr_arabic.txt"), "r", encoding="utf-8") as f:
+        fmt = f.read().strip()
+    print("  ✓ Using template: 'AI with OCR for Arabic' (bundled prompts + OCR)")
+    return {
+        "_ocr_template": True,
+        "ai_triage_prompt": triage,
+        "ai_format_prompt": fmt,
+        "ocr_enabled": True,
+        "ocr_provider": "google",
+        "ocr_tier": "agentic",
+    }
 
 
 def list_existing_channels():
@@ -115,6 +141,8 @@ def add_channel(
         print(f"  Triage Prompt:   {'SET' if source.get('ai_triage_prompt') else 'NOT SET'}")
         print(f"  Format Prompt:   {'SET' if source.get('ai_format_prompt') else 'NOT SET'}")
         print(f"  Fallback AI:     {source.get('ai_fallback_provider')}/{source.get('ai_fallback_model')}")
+        if source.get("_ocr_template"):
+            print(f"  OCR:             enabled ({source.get('ocr_provider')})")
     print("─" * 60)
 
     if dry_run:
@@ -144,6 +172,13 @@ def add_channel(
             "ai_fallback_model":    source.get("ai_fallback_model"),
             "ai_triage_prompt":     source.get("ai_triage_prompt"),
             "ai_format_prompt":     source.get("ai_format_prompt"),
+        })
+
+    if source and source.get("_ocr_template"):
+        update_kwargs.update({
+            "ocr_enabled": True,
+            "ocr_provider": source.get("ocr_provider") or "google",
+            "ocr_tier": source.get("ocr_tier") or "agentic",
         })
 
     db.update_channel(new_id, **update_kwargs)

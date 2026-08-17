@@ -225,6 +225,39 @@ BEGIN
     END IF;
 END $$;
 
+-- Idempotent: add ocr_enabled flag (run OCR on image attachments before AI)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ocr_enabled'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ocr_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
+
+-- Idempotent: add ocr_provider (OCR engine selection: google | llama_parse)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ocr_provider'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ocr_provider TEXT;
+    END IF;
+END $$;
+
+-- Idempotent: add ocr_tier (LlamaParse tier: agentic | agentic_plus | cost_effective | fast)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tele_channels' AND column_name = 'ocr_tier'
+    ) THEN
+        ALTER TABLE tele_channels ADD COLUMN ocr_tier TEXT;
+    END IF;
+END $$;
+
 -- Idempotent: drop UNIQUE on chat_id so one Telegram channel can forward
 -- to multiple Discord webhooks.
 ALTER TABLE tele_channels DROP CONSTRAINT IF EXISTS tele_channels_chat_id_key;
@@ -415,11 +448,13 @@ def update_channel(channel_id: int, **kwargs) -> dict | None:
     Update one or more columns on a channel row.
     Accepted kwargs: name, chat_id, discord_webhook, enabled, telegram_channel_id, discord_role_id,
                      ai_enabled, ai_triage_prompt, ai_format_prompt, ai_provider, ai_model,
-                     ai_fallback_provider, ai_fallback_model, suppress_images
+                     ai_fallback_provider, ai_fallback_model, suppress_images,
+                     ocr_enabled, ocr_provider, ocr_tier
     """
     allowed = {"name", "chat_id", "discord_webhook", "enabled", "telegram_channel_id", "discord_role_id", 
                "ai_enabled", "ai_triage_prompt", "ai_format_prompt", "ai_provider", "ai_model",
-               "ai_fallback_provider", "ai_fallback_model", "suppress_images"}
+               "ai_fallback_provider", "ai_fallback_model", "suppress_images",
+               "ocr_enabled", "ocr_provider", "ocr_tier"}
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return None
