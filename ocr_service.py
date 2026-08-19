@@ -28,20 +28,60 @@ logger = logging.getLogger(__name__)
 GOOGLE_VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
 LLAMA_PARSE_BASE = "https://api.cloud.llamaindex.ai"
 
+# Channel-branding watermarks baked into images (logos, banners). Any OCR line
+# containing one of these phrases is removed BEFORE the text reaches the AI,
+# so branding can never confuse triage/formatting. Case-insensitive substring
+# match; add new variants (spelling, script) as they appear.
+WATERMARK_PHRASES = [
+    "كنترول الاوبشن",   # "Control Optional" — Arabic kaf ك
+    "کنترول الاوبشن",   # "Control Optional" — Arabic kaf ک variant
+    "control optional",
+]
+
+
+def _strip_watermarks(text: str | None) -> str | None:
+    """Remove lines containing watermark phrases from OCR text."""
+    if not text:
+        return text
+    kept = [
+        line for line in text.splitlines()
+        if not any(p in line.lower() for p in WATERMARK_PHRASES)
+    ]
+    removed = len(text.splitlines()) - len(kept)
+    if removed:
+        logger.info(f"OCR watermark filter: removed {removed} line(s)")
+    return "\n".join(kept).strip() or None
+
 
 async def extract_text_from_image(
     image_data: bytes,
     provider: str = "google",
     llama_tier: str = "agentic",
+    fallback_provider: str | None = None,
 ) -> str | None:
     """Extract text from image bytes using the selected OCR provider.
 
     Returns the extracted text, or ``None`` on any failure (never raises).
+    When ``fallback_provider`` is set and differs from ``provider``, a failed
+    primary attempt is retried once with the fallback provider.
     """
     provider = (provider or "google").lower()
     if provider == "llama_parse":
-        return await _ocr_llama_parse(image_data, tier=llama_tier)
-    return await _ocr_google_vision(image_data)
+        text = await _ocr_llama_parse(image_data, tier=llama_tier)
+    else:
+        text = await _ocr_google_vision(image_data)
+
+    if text is None and fallback_provider:
+        fallback_provider = fallback_provider.lower()
+        if fallback_provider != provider:
+            logger.info(
+                f"OCR falling back to {fallback_provider} (primary {provider} failed)"
+            )
+            if fallback_provider == "llama_parse":
+                text = await _ocr_llama_parse(image_data, tier=llama_tier)
+            else:
+                text = await _ocr_google_vision(image_data)
+    return _strip_watermarks(text)
 
 
 async def _ocr_google_vision(image_data: bytes) -> str | None:
@@ -117,9 +157,11 @@ async def _ocr_llama_parse(image_data: bytes, tier: str = "agentic") -> str | No
             if not job_id:
                 logger.warning("LlamaParse upload returned no job id")
                 return None
+            logger.info(f"LlamaParse job {job_id} uploaded (tier={tier}) — polling")
 
             # 2. Poll until the job completes.
             status = ""
+            last_logged_status = ""
             job = {}
             for _ in range(90):
                 await asyncio.sleep(2)
@@ -129,9 +171,29 @@ async def _ocr_llama_parse(image_data: bytes, tier: str = "agentic") -> str | No
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
                     if resp.status != 200:
+                        body = (await resp.text())[:200]
+                        logger.warning(f"LlamaParse poll error {resp.status}: {body}")
                         continue
                     job = await resp.json()
-                status = (job.get("status") or "").upper()
+
+                # v2 nests the job state inside a "job" object; the parsed
+                # content (text_full etc.) lives at the top level.
+                inner = job.get("job") or {}
+                status = (inner.get("status") or job.get("status") or "").upper()
+
+                # Shortcut: content already there — no need to wait for a
+                # terminal status flag.
+                if job.get("text_full"):
+                    logger.info(f"LlamaParse job {job_id} content ready (status={status or 'n/a'})")
+                    return job["text_full"]
+
+                if not status and job:
+                    logger.warning(
+                        f"LlamaParse poll returned no status field; keys: {list(job)[:10]}"
+                    )
+                if status and status != last_logged_status:
+                    logger.info(f"LlamaParse job {job_id} status: {status}")
+                    last_logged_status = status
                 if status in ("COMPLETED", "FAILED", "CANCELLED"):
                     break
 

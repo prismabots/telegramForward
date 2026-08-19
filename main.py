@@ -722,8 +722,9 @@ async def _process_message(event, cfg):
                 media_type      = detect_media_type(media_path)
                 media_file_name = os.path.basename(media_path)
 
-                # Suppress images if the channel has the flag set
-                if media_type == "photo" and cfg.get("suppress_images"):
+                # Suppress images if the channel has the flag set.
+                # OCR-enabled channels defer suppression until AFTER OCR runs.
+                if media_type == "photo" and cfg.get("suppress_images") and not cfg.get("ocr_enabled"):
                     logger.info(f"[{channel_name}] Suppressing image attachment (suppress_images=True)")
                     try:
                         os.remove(media_path)
@@ -739,15 +740,41 @@ async def _process_message(event, cfg):
             try:
                 with open(media_path, "rb") as f:
                     image_bytes = f.read()
+                ocr_provider = cfg.get("ocr_provider") or "google"
                 ocr_text = await ocr_service.extract_text_from_image(
                     image_bytes,
-                    provider=cfg.get("ocr_provider") or "google",
-                    llama_tier=cfg.get("ocr_tier") or "agentic",
+                    provider=ocr_provider,
+                    llama_tier=cfg.get("ocr_tier") or "fast",
+                    # Safety net: whichever provider is primary, the other one backs it up.
+                    fallback_provider="llama_parse" if ocr_provider == "google" else "google",
                 )
                 if ocr_text and should_log_verbose(db_channel_id):
                     logger.info(f"[{channel_name}] OCR extracted {len(ocr_text)} chars")
             except Exception as e:
                 logger.warning(f"[{channel_name}] OCR failed: {e}")
+
+        # Deferred image suppression for OCR channels — OCR has run by now
+        if (
+            media_path
+            and media_type == "photo"
+            and cfg.get("suppress_images")
+            and cfg.get("ocr_enabled")
+        ):
+            logger.info(f"[{channel_name}] Suppressing image attachment after OCR (suppress_images=True)")
+            try:
+                os.remove(media_path)
+            except Exception:
+                pass
+            media_path      = None
+            media_type      = None
+            media_file_name = None
+
+        # If suppression + failed OCR left us with nothing, skip the message entirely
+        if not message_text and not ocr_text and not media_path:
+            logger.warning(
+                f"[{channel_name}] Nothing to post (image suppressed, no text, OCR empty) — skipping"
+            )
+            return None
 
         # Raw message for archive (serialise safely)
         try:
@@ -874,6 +901,14 @@ async def _process_message(event, cfg):
                 f"[{channel_name}] Message still contains Arabic after AI processing — "
                 "discarding to prevent Arabic output"
             )
+            return
+
+        # OCR channels: a dash-only sentinel from the formatter means
+        # "nothing worth posting" (e.g. a bare chart with no extractable
+        # levels) — skip the message entirely, image included.
+        stripped = (message_text or "").strip()
+        if cfg.get("ocr_enabled") and len(stripped) >= 5 and set(stripped) == {"-"}:
+            logger.info(f"[{channel_name}] Formatter returned skip sentinel — not posting")
             return
 
         return {

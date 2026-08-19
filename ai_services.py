@@ -86,6 +86,15 @@ def _log_spx_format_output(channel_id: int | None, channel_name: str,
 # Default prompts (used when a channel has no custom prompt set)
 # ---------------------------------------------------------------------------
 
+def _strip_code_fence(text: str) -> str:
+    """Remove a single outer markdown code fence if the model wrapped its answer
+    in one (```...``` or ```json...```). Inner content is kept as-is."""
+    lines = text.strip().splitlines()
+    if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return text
+
+
 DEFAULT_TRIAGE_PROMPT = """You are a financial signal triage assistant.
 
 Your job is to evaluate an incoming message from a Telegram trading/finance channel
@@ -466,6 +475,8 @@ async def triage_message(
                 timeout=60.0,  # Increased for long messages with many trades
             )
         rewritten = rewritten.strip() or None
+        if rewritten:
+            rewritten = _strip_code_fence(rewritten) or None
         if verbose_logging:
             logger.info(f"AI format [{channel_name}]: rewritten ({len(rewritten or '')} chars)")
 
@@ -487,6 +498,8 @@ async def triage_message(
                         timeout=60.0,
                     )
                 rewritten = rewritten.strip() or None
+                if rewritten:
+                    rewritten = _strip_code_fence(rewritten) or None
                 if verbose_logging:
                     logger.info(f"AI format [{channel_name}] (FALLBACK {fallback_provider}): rewritten ({len(rewritten or '')} chars)")
                 format_error = None  # Clear error since fallback succeeded
